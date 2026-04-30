@@ -1,0 +1,30 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# OS specific
+.DS_Store
+
+# Environment
+renv/library/
+renv/python/
+renv/staging/
+
+# Data and Outputs
+data/
+outputs/
+*.parquet
+*.csv
+*.shp
+*.shx
+*.dbf
+*.prj
+*.qpj
+*.cpg
+*.gpkg
+*.geojson
+
+# Temp files
+*.tmp
+*~
