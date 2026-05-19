@@ -24,21 +24,15 @@ source(here::here(
 
 ## Parameters
 year <- 2010
-# lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", 
-#                    "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", 
-#                    "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO")
-lista_estados <- c("MG")
+lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", 
+                   "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", 
+                   "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO")
+#lista_estados <- c("MG")
 
 # Get geographic data for Brazil
 sf_geo_br <- sfarrow::st_read_parquet(
   here(
     "data", "geo_br.parquet")
-)
-
-# Get population data for Brazil
-population_br <- arrow::read_parquet(
-  here(
-    "data", "population_br.parquet")
 )
 
 # Get census tract data for Brazil
@@ -48,29 +42,10 @@ census_tracts_br <- arrow::read_parquet(
     "data", "census_tracts_br.parquet")
 )
 
-# TEMPORARY!!
-# Get segregation indices estimated via QGIS plugin segreg 
-# for the tracts not covered in the MVP estimation 
-# to ensure we have all tracts covered for the MVP
-sf_qgis_segregation_indices <- sfarrow::st_read_parquet(
-  here::here(
-    "data",
-    "qgis",
-    "indices_segreg.parquet")
-)
-
-# TEMPORARY!!
-# To integrate population data and geometry!
-qgis_segregation_indices <- sf_qgis_segregation_indices %>%
-  st_drop_geometry() %>%
-  transmute(
-    code_muni = as.character(code_muni),
-    code_tract = as.character(cod_setor),
-    dissimilarity = dissimil,
-    index_h
-  )
-
 # 2. Estimate -------------------------------------------------------------
+
+# Initialize accumulator list
+all_results <- list()
 
 # For each state in the list of states, calculate segregation indices
 # Could be part of the function 
@@ -97,8 +72,30 @@ for(st in lista_estados) {
   local_index_h  <- calculate_local_h(tracts_segreg)
   global_index_h <- calculate_global_h(local_index_h)
   
+  # accumulate results for this state
+  all_results[[st]] <- list(
+    local_diss = local_diss,
+    global_diss = global_diss,
+    local_expo = local_expo,
+    global_expo = global_expo,
+    agregate_local_expo = agregate_local_expo,
+    agragate_global_expo = agragate_global_expo,
+    local_index_h = local_index_h,
+    global_index_h = global_index_h
+  )
+  
   message("--- Process completed: ", st, " ---")
 }
+
+# combine all states
+local_diss <- bind_rows(map(all_results, "local_diss"))
+global_diss <- bind_rows(map(all_results, "global_diss"))
+local_expo <- bind_rows(map(all_results, "local_expo"))
+global_expo <- bind_rows(map(all_results, "global_expo"))
+agregate_local_expo <- bind_rows(map(all_results, "agregate_local_expo"))
+agragate_global_expo <- bind_rows(map(all_results, "agragate_global_expo"))
+local_index_h <- bind_rows(map(all_results, "local_index_h"))
+global_index_h <- bind_rows(map(all_results, "global_index_h"))
 
 
 # TEMPORARY!!
@@ -173,8 +170,7 @@ segregation_indices_raw <- full_join(
 
 # TEMPORARY!!
 segregation_indices_mg_rm <- segregation_indices_raw %>%
-  filter(code_muni == "Total") %>%
-  left_join(population_br) 
+  filter(code_muni == "Total")
 
 # TEMPORARY!!
 segregation_indices_mg_rm_tract <- segregation_indices_raw %>%
@@ -182,14 +178,12 @@ segregation_indices_mg_rm_tract <- segregation_indices_raw %>%
   select(-c(code_muni)) %>%
   left_join(sf_geo_br %>% st_drop_geometry() %>% select(code_muni, code_tract),
             by = c("code_tract")) %>%
-  left_join(population_br) %>%
   select(name_metro, code_muni, code_tract, everything())
 
 # TEMPORARY!!
 segregation_indices_mg_muni_tract <- segregation_indices_raw %>%
   filter(is.na(name_metro)) %>%
-  select(-name_metro) %>%
-  left_join(population_br)
+  select(-name_metro)
 
 #
 list_code_tracts_mvp <- c(
@@ -204,11 +198,11 @@ segregation_indices <- segregation_indices_mg_muni_tract %>%
   full_join(segregation_indices_mg_rm) %>%
   # Add the remaining tracts estimated via QGIS plugin segreg 
   # to ensure we have all tracts covered for the MVP
-  full_join(
-    qgis_segregation_indices %>%
-      filter(!code_tract %in% list_code_tracts_mvp) %>% # only those out of MG State
-      left_join(population_br)
-  ) %>%
+  #full_join(
+  #  qgis_segregation_indices %>%
+  #    filter(!code_tract %in% list_code_tracts_mvp) %>% # only those out of MG State
+  #    left_join(population_br)
+  #) %>%
   select(
     name_metro, everything()
   )
@@ -306,4 +300,3 @@ leaflet() %>%
     title = "Dissimilarity Index",
     position = "bottomright"
   )
-
