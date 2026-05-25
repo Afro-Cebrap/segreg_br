@@ -20,7 +20,8 @@ lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "
 
 # Get geo data for municipalities in metropolitan areas (geometry by municipality)
 sf_muni_metro_br <- geobr::read_metro_area(year = 2010, cache = TRUE) %>%
-  mutate(code_muni = as.character(code_muni)) 
+  mutate(code_muni = as.character(code_muni))%>%
+  filter(!str_detect(name_metro, "RIDE"))
 
 # Spatial key for metropolitan areas
 sf_key_metro_br <- sf_muni_metro_br %>%
@@ -84,6 +85,11 @@ sf_geo_br <- bind_rows(
 ) 
 
 # Export ------------------------------------------------------------------
+
+# Create data directory if it does not exist
+if (!dir.exists(here("data"))) {
+  dir.create(here("data"), recursive = TRUE)
+}
 
 # Export the combined geospatial data to a Parquet file
 sfarrow::st_write_parquet(

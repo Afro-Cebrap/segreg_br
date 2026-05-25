@@ -27,7 +27,6 @@ year <- 2010
 lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", 
                    "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", 
                    "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO")
-#lista_estados <- c("MG")
 
 # Get geographic data for Brazil
 sf_geo_br <- sfarrow::st_read_parquet(
@@ -97,18 +96,6 @@ agragate_global_expo <- bind_rows(map(all_results, "agragate_global_expo"))
 local_index_h <- bind_rows(map(all_results, "local_index_h"))
 global_index_h <- bind_rows(map(all_results, "global_index_h"))
 
-
-# TEMPORARY!!
-# Adjust naming!!
-local_diss <- local_diss %>%
-  rename(dissimilarity = tract_contrib)
-# Adjust naming
-global_index_h <- global_index_h %>%
-  rename(index_h = h_index_global)
-# Adjust naming
-local_index_h <- local_index_h %>%
-  rename(index_h = h_local)
-
 # list of estimated indices - global
 list_segregation_indices_global <- list(
   global_diss = global_diss %>% mutate(code_tract = "Total"),
@@ -168,50 +155,65 @@ segregation_indices_raw <- full_join(
     name_metro, everything()
   )
 
-# TEMPORARY!!
-segregation_indices_mg_rm <- segregation_indices_raw %>%
-  filter(code_muni == "Total")
 
-# TEMPORARY!!
-segregation_indices_mg_rm_tract <- segregation_indices_raw %>%
-  filter(!is.na(name_metro) & code_tract != "Total") %>%
-  select(-c(code_muni)) %>%
-  left_join(sf_geo_br %>% st_drop_geometry() %>% select(code_muni, code_tract),
-            by = c("code_tract")) %>%
-  select(name_metro, code_muni, code_tract, everything())
-
-# TEMPORARY!!
-segregation_indices_mg_muni_tract <- segregation_indices_raw %>%
-  filter(is.na(name_metro)) %>%
-  select(-name_metro)
-
-#
-list_code_tracts_mvp <- c(
+segregation_indices <- bind_rows(
+  # tracts outside RM
   segregation_indices_raw %>%
-    filter(code_tract != "Total") %>%
-    pull(code_tract)
-)
+    filter(is.na(name_metro)) %>%
+    select(-name_metro),
+  
+  # tracts inside RM
+  segregation_indices_raw %>%
+    filter(!is.na(name_metro) & code_tract != "Total") %>%
+    select(-c(code_muni)) %>%
+    left_join(
+      sf_geo_br %>% st_drop_geometry() %>% select(code_muni, code_tract),
+      by = "code_tract"
+    ) %>%
+    select(name_metro, code_muni, code_tract, everything()),
+  
+  # totals per municipality or RM
+  segregation_indices_raw %>%
+    filter(code_muni == "Total")
+) %>%
+  select(name_metro, everything())
 
-#
-segregation_indices <- segregation_indices_mg_muni_tract %>%
-  full_join(segregation_indices_mg_rm_tract) %>%
-  full_join(segregation_indices_mg_rm) %>%
-  # Add the remaining tracts estimated via QGIS plugin segreg 
-  # to ensure we have all tracts covered for the MVP
-  #full_join(
-  #  qgis_segregation_indices %>%
-  #    filter(!code_tract %in% list_code_tracts_mvp) %>% # only those out of MG State
-  #    left_join(population_br)
-  #) %>%
-  select(
-    name_metro, everything()
+
+
+# join for census tracts (tract level)
+sf_tracts <- sf_geo_br %>%
+  filter(code_tract != "Total") %>%
+  left_join(
+    segregation_indices %>% 
+      filter(code_tract != "Total") %>%
+      select(code_tract, dissimilarity, index_h, exp_branca_pp, 
+             exp_pp_branca, iso_branca_branca, iso_pp_pp),
+    by = "code_tract"
   )
 
+# totals per municipality
+sf_totals_muni <- sf_geo_br %>%
+  filter(code_tract == "Total" & is.na(name_metro)) %>%
+  left_join(
+    segregation_indices %>%
+      filter(code_tract == "Total" & is.na(name_metro)) %>%
+      select(code_muni, code_tract, dissimilarity, index_h,
+             exp_branca_pp, exp_pp_branca, iso_branca_branca, iso_pp_pp),
+    by = c("code_muni", "code_tract")
+  )
 
-# TEMPORARY
-sf_segregation_indices <- sf_geo_br %>%
-  left_join(segregation_indices)
+# totals per RMs
+sf_totals_rm <- sf_geo_br %>%
+  filter(code_tract == "Total" & !is.na(name_metro)) %>%
+  left_join(
+    segregation_indices %>%
+      filter(code_muni == "Total") %>%
+      select(name_metro, code_tract, dissimilarity, index_h,
+             exp_branca_pp, exp_pp_branca, iso_branca_branca, iso_pp_pp),
+    by = c("name_metro", "code_tract")
+  )
 
+sf_segregation_indices <- bind_rows(sf_tracts, sf_totals_muni, sf_totals_rm)
 
 # 3. Export ---------------------------------------------------------------
 

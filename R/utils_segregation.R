@@ -31,6 +31,7 @@ prepare_data <- function(state_br, tracts_br, year) {
   metro_state <- read_metro_area(year) %>%
     st_drop_geometry() %>%
     filter(abbrev_state == state_br) %>%
+    filter(!str_detect(name_metro, "RIDE")) %>% 
     select(code_muni, name_metro) %>%
     mutate(code_muni = as.character(code_muni))
   
@@ -87,7 +88,7 @@ calculate_local_dissimilarity <- function(tracts_segreg) {
     select(
       unit_id, 
       code_tract, 
-      tract_contrib
+      dissimilarity = tract_contrib
     )
   return(df_result)
 }
@@ -96,7 +97,7 @@ calculate_global_dissimilarity <- function(local_diss) {
   global_results <- local_diss %>%
     group_by(unit_id) %>%
     summarise(
-      dissimilarity = sum(tract_contrib, na.rm = TRUE),
+      dissimilarity = sum(dissimilarity, na.rm = TRUE),
     )%>%
     select(
       unit_id, 
@@ -190,15 +191,15 @@ calculate_local_h <- function(tracts_segreg) {
     # H_local = [ Pj * (E - Ei) ] / (E * N)
     mutate(
       eei = global_entropy - local_entropy,
-      h_local = (tract_total * eei) / (global_entropy * unit_total)
+      index_h = (tract_total * eei) / (global_entropy * unit_total)
     ) %>%
-    mutate(h_local = coalesce(h_local, 0)) %>%
+    mutate(index_h = coalesce(index_h, 0)) %>%
     select(
       unit_id,
       code_tract,
       local_entropy,
       global_entropy,
-      h_local
+      index_h
     )
   
   return(df_result)
@@ -209,7 +210,7 @@ calculate_global_h <- function(local_h) {
     group_by(unit_id) %>%
     summarise(
       global_entropy = first(global_entropy),
-      h_index_global = sum(h_local)
+      index_h  = sum(index_h)
     )
   
   return(global_results)
