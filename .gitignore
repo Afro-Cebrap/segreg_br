@@ -28,3 +28,4 @@ outputs/
 # Temp files
 *.tmp
 *~
+.positai
