@@ -243,13 +243,13 @@ sfarrow::st_write_parquet(
 
 # view data for RM Belo Horizonte
 sf_segregation_indices %>%
-  filter(name_metro == "RM Belo Horizonte") %>%
+  filter(name_metro == "Rm Belo Horizonte") %>%
   view()
 
 # Static map with ggplot2
 ggplot() +
   geom_sf(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "Rm Belo Horizonte" & code_tract != "Total"),
     aes(fill = dissimilarity)
   ) +
   scale_fill_viridis_c() +
@@ -262,7 +262,7 @@ ggplot() +
 # Static map with ggplot2 - RM Rio de Janeiro
 ggplot() +
   geom_sf(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Rio de Janeiro" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "Rm Rio de Janeiro" & code_tract != "Total"),
     aes(fill = dissimilarity)
   ) +
   scale_fill_viridis_c() +
@@ -275,7 +275,7 @@ ggplot() +
 # Static map with ggplot2 - Ribeirão das Neves (municipality in RM Belo Horizonte)
 ggplot() +
   geom_sf(
-    data = sf_segregation_indices %>% filter(name_muni == "Ribeirão Das Neves" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_muni == "Ribeirão das Neves" & code_tract != "Total"),
     aes(fill = dissimilarity)
   ) +
   scale_fill_viridis_c() +
@@ -289,7 +289,7 @@ ggplot() +
 leaflet() %>%
   addTiles() %>%
   addPolygons(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "Rm Belo Horizonte" & code_tract != "Total"),
     fillColor = ~colorNumeric("viridis", dissimilarity)(dissimilarity),
     fillOpacity = 0.7,
     color = "white",

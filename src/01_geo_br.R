@@ -33,7 +33,7 @@ sf_key_metro_br <- sf_muni_metro_br %>%
   # to integrate with the population data and geometry of the tracts
   group_by(name_metro) %>%
   summarise(
-    geom = st_union(geom)
+    geom = st_union(geometry)
   ) %>%
   ungroup()
 
@@ -68,7 +68,7 @@ sf_tracts_br <- lista_estados %>%
   ) %>%
   mutate(
     code_muni = as.character(code_muni),
-    code_state = as.character(code_state)
+    code_tract = as.character(code_tract)
   ) %>%
   # integrate specfic data for municipalities + metropolitan areas
   left_join(

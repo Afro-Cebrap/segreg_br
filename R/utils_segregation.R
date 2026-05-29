@@ -6,7 +6,7 @@ library(sf)
 
 prepare_data <- function(state_br, tracts_br, year) {
   
-  muni_state <- read_municipality(state_br, year, simplified = TRUE) %>%
+  muni_state <- read_municipality(state_br, year = year, simplified = TRUE) %>%
     st_drop_geometry() %>%
     select(code_muni) %>%
     mutate(code_muni = as.character(code_muni))
