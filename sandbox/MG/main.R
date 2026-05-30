@@ -7,9 +7,8 @@ library(dplyr)
 # Custom functions to calculate segregation indices
 #source("scripts/utils_segregation.R")
 source(here::here(
-  "R", "utils_segregation.R")
-  )
-
+  "src", "utils", "utils_segregation.R")
+)
 # 1. Inputs ---------------------------------------------------------------
 
 year <- 2010

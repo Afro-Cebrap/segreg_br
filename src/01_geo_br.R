@@ -95,6 +95,6 @@ if (!dir.exists(here("data"))) {
 sfarrow::st_write_parquet(
   sf_geo_br,
   here(
-    "data", "geo_br.parquet")
+    "data", "1_bronze", "geo_br.parquet")
 )
 

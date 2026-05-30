@@ -32,10 +32,13 @@ if (any(missing)) {
   cat("✅ All critical packages installed!\n")
 }
 
-# 5. Create data directory if needed
-if (!dir.exists(here::here("data"))) {
-  cat("Creating data directory...\n")
-  dir.create(here::here("data"), recursive = TRUE)
+# 5. Create data directories if needed
+data_dirs <- c("data/1_bronze", "data/2_silver", "data/3_gold", "data/metadata", "sandbox", "config", "tests")
+for (d in data_dirs) {
+  if (!dir.exists(here::here(d))) {
+    cat(paste0("Creating ", d, " directory...\n"))
+    dir.create(here::here(d), recursive = TRUE)
+  }
 }
 
 cat("\n✅ Project environment ready!\n")
