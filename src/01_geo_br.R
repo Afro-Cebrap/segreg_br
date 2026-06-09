@@ -90,11 +90,14 @@ sf_geo_br <- bind_rows(
 if (!dir.exists(here("data"))) {
   dir.create(here("data"), recursive = TRUE)
 }
+if (!dir.exists(here("data","1_raw"))) {
+  dir.create(here("data","1_raw"), recursive = TRUE)
+}
 
 # Export the combined geospatial data to a Parquet file
 sfarrow::st_write_parquet(
   sf_geo_br,
   here(
-    "data", "1_bronze", "geo_br.parquet")
+    "data", "1_raw", "geo_br.parquet")
 )
 

@@ -25,7 +25,7 @@ census_tracts_br <- censobr::read_tracts(year, dataset = "Pessoa", as_data_frame
 arrow::write_parquet(
   census_tracts_br,
   here(
-    "data", "1_bronze", "census_tracts_br.parquet")
+    "data", "1_raw", "census_tracts_br.parquet")
 )
 
 

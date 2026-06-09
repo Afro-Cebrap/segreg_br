@@ -31,14 +31,14 @@ lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO",
 # Get geographic data for Brazil
 sf_geo_br <- sfarrow::st_read_parquet(
   here(
-    "data", "1_bronze", "geo_br.parquet")
+    "data", "1_raw", "geo_br.parquet")
 )
 
 # Get census tract data for Brazil
 # Could be incorporated in the function!!
 census_tracts_br <- arrow::read_parquet(
   here(
-    "data", "census_tracts_br.parquet")
+    "data", "1_raw", "census_tracts_br.parquet")
 )
 
 # 2. Estimate -------------------------------------------------------------
