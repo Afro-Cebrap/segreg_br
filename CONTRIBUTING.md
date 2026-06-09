@@ -15,9 +15,11 @@ Thank you for considering contributing to this research project!
 ## Project Standards
 
 - Follow the directory structure:
-    - `R/` for functions.
-    - `analysis/` for numbered analysis scripts.
-    - `data/` and `outputs/` are ignored by Git.
+    - `src/` for pipeline scripts.
+    - `src/utils/` for reusable functions.
+    - `data/` for datasets (organized in 1_bronze, 2_silver, 3_gold).
+    - `sandbox/` for drafts and local tests.
+    - Use `renv` for dependency management.
 
 ## Code of Conduct
 

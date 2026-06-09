@@ -24,53 +24,27 @@ source(here::here(
 
 ## Parameters
 year <- 2010
-# lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", 
-#                    "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", 
-#                    "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO")
-lista_estados <- c("MG")
+lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", 
+                   "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", 
+                   "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO")
 
 # Get geographic data for Brazil
 sf_geo_br <- sfarrow::st_read_parquet(
   here(
-    "data", "geo_br.parquet")
-)
-
-# Get population data for Brazil
-population_br <- arrow::read_parquet(
-  here(
-    "data", "population_br.parquet")
+    "data", "1_raw", "geo_br.parquet")
 )
 
 # Get census tract data for Brazil
 # Could be incorporated in the function!!
 census_tracts_br <- arrow::read_parquet(
   here(
-    "data", "census_tracts_br.parquet")
+    "data", "1_raw", "census_tracts_br.parquet")
 )
-
-# TEMPORARY!!
-# Get segregation indices estimated via QGIS plugin segreg 
-# for the tracts not covered in the MVP estimation 
-# to ensure we have all tracts covered for the MVP
-sf_qgis_segregation_indices <- sfarrow::st_read_parquet(
-  here::here(
-    "data",
-    "qgis",
-    "indices_segreg.parquet")
-)
-
-# TEMPORARY!!
-# To integrate population data and geometry!
-qgis_segregation_indices <- sf_qgis_segregation_indices %>%
-  st_drop_geometry() %>%
-  transmute(
-    code_muni = as.character(code_muni),
-    code_tract = as.character(cod_setor),
-    dissimilarity = dissimil,
-    index_h
-  )
 
 # 2. Estimate -------------------------------------------------------------
+
+# Initialize accumulator list
+all_results <- list()
 
 # For each state in the list of states, calculate segregation indices
 # Could be part of the function 
@@ -97,20 +71,30 @@ for(st in lista_estados) {
   local_index_h  <- calculate_local_h(tracts_segreg)
   global_index_h <- calculate_global_h(local_index_h)
   
+  # accumulate results for this state
+  all_results[[st]] <- list(
+    local_diss = local_diss,
+    global_diss = global_diss,
+    local_expo = local_expo,
+    global_expo = global_expo,
+    agregate_local_expo = agregate_local_expo,
+    agragate_global_expo = agragate_global_expo,
+    local_index_h = local_index_h,
+    global_index_h = global_index_h
+  )
+  
   message("--- Process completed: ", st, " ---")
 }
 
-
-# TEMPORARY!!
-# Adjust naming!!
-local_diss <- local_diss %>%
-  rename(dissimilarity = tract_contrib)
-# Adjust naming
-global_index_h <- global_index_h %>%
-  rename(index_h = h_index_global)
-# Adjust naming
-local_index_h <- local_index_h %>%
-  rename(index_h = h_local)
+# combine all states
+local_diss <- bind_rows(map(all_results, "local_diss"))
+global_diss <- bind_rows(map(all_results, "global_diss"))
+local_expo <- bind_rows(map(all_results, "local_expo"))
+global_expo <- bind_rows(map(all_results, "global_expo"))
+agregate_local_expo <- bind_rows(map(all_results, "agregate_local_expo"))
+agragate_global_expo <- bind_rows(map(all_results, "agragate_global_expo"))
+local_index_h <- bind_rows(map(all_results, "local_index_h"))
+global_index_h <- bind_rows(map(all_results, "global_index_h"))
 
 # list of estimated indices - global
 list_segregation_indices_global <- list(
@@ -171,53 +155,65 @@ segregation_indices_raw <- full_join(
     name_metro, everything()
   )
 
-# TEMPORARY!!
-segregation_indices_mg_rm <- segregation_indices_raw %>%
-  filter(code_muni == "Total") %>%
-  left_join(population_br) 
 
-# TEMPORARY!!
-segregation_indices_mg_rm_tract <- segregation_indices_raw %>%
-  filter(!is.na(name_metro) & code_tract != "Total") %>%
-  select(-c(code_muni)) %>%
-  left_join(sf_geo_br %>% st_drop_geometry() %>% select(code_muni, code_tract),
-            by = c("code_tract")) %>%
-  left_join(population_br) %>%
-  select(name_metro, code_muni, code_tract, everything())
-
-# TEMPORARY!!
-segregation_indices_mg_muni_tract <- segregation_indices_raw %>%
-  filter(is.na(name_metro)) %>%
-  select(-name_metro) %>%
-  left_join(population_br)
-
-#
-list_code_tracts_mvp <- c(
+segregation_indices <- bind_rows(
+  # tracts outside RM
   segregation_indices_raw %>%
-    filter(code_tract != "Total") %>%
-    pull(code_tract)
-)
+    filter(is.na(name_metro)) %>%
+    select(-name_metro),
+  
+  # tracts inside RM
+  segregation_indices_raw %>%
+    filter(!is.na(name_metro) & code_tract != "Total") %>%
+    select(-c(code_muni)) %>%
+    left_join(
+      sf_geo_br %>% st_drop_geometry() %>% select(code_muni, code_tract),
+      by = "code_tract"
+    ) %>%
+    select(name_metro, code_muni, code_tract, everything()),
+  
+  # totals per municipality or RM
+  segregation_indices_raw %>%
+    filter(code_muni == "Total")
+) %>%
+  select(name_metro, everything())
 
-#
-segregation_indices <- segregation_indices_mg_muni_tract %>%
-  full_join(segregation_indices_mg_rm_tract) %>%
-  full_join(segregation_indices_mg_rm) %>%
-  # Add the remaining tracts estimated via QGIS plugin segreg 
-  # to ensure we have all tracts covered for the MVP
-  full_join(
-    qgis_segregation_indices %>%
-      filter(!code_tract %in% list_code_tracts_mvp) %>% # only those out of MG State
-      left_join(population_br)
-  ) %>%
-  select(
-    name_metro, everything()
+
+
+# join for census tracts (tract level)
+sf_tracts <- sf_geo_br %>%
+  filter(code_tract != "Total") %>%
+  left_join(
+    segregation_indices %>% 
+      filter(code_tract != "Total") %>%
+      select(code_tract, dissimilarity, index_h, exp_branca_pp, 
+             exp_pp_branca, iso_branca_branca, iso_pp_pp),
+    by = "code_tract"
   )
 
+# totals per municipality
+sf_totals_muni <- sf_geo_br %>%
+  filter(code_tract == "Total" & is.na(name_metro)) %>%
+  left_join(
+    segregation_indices %>%
+      filter(code_tract == "Total" & is.na(name_metro)) %>%
+      select(code_muni, code_tract, dissimilarity, index_h,
+             exp_branca_pp, exp_pp_branca, iso_branca_branca, iso_pp_pp),
+    by = c("code_muni", "code_tract")
+  )
 
-# TEMPORARY
-sf_segregation_indices <- sf_geo_br %>%
-  left_join(segregation_indices)
+# totals per RMs
+sf_totals_rm <- sf_geo_br %>%
+  filter(code_tract == "Total" & !is.na(name_metro)) %>%
+  left_join(
+    segregation_indices %>%
+      filter(code_muni == "Total") %>%
+      select(name_metro, code_tract, dissimilarity, index_h,
+             exp_branca_pp, exp_pp_branca, iso_branca_branca, iso_pp_pp),
+    by = c("name_metro", "code_tract")
+  )
 
+sf_segregation_indices <- bind_rows(sf_tracts, sf_totals_muni, sf_totals_rm)
 
 # 3. Export ---------------------------------------------------------------
 
@@ -247,13 +243,13 @@ sfarrow::st_write_parquet(
 
 # view data for RM Belo Horizonte
 sf_segregation_indices %>%
-  filter(name_metro == "RM Belo Horizonte") %>%
+  filter(name_metro == "Rm Belo Horizonte") %>%
   view()
 
 # Static map with ggplot2
 ggplot() +
   geom_sf(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "Rm Belo Horizonte" & code_tract != "Total"),
     aes(fill = dissimilarity)
   ) +
   scale_fill_viridis_c() +
@@ -266,7 +262,7 @@ ggplot() +
 # Static map with ggplot2 - RM Rio de Janeiro
 ggplot() +
   geom_sf(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Rio de Janeiro" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "Rm Rio de Janeiro" & code_tract != "Total"),
     aes(fill = dissimilarity)
   ) +
   scale_fill_viridis_c() +
@@ -279,7 +275,7 @@ ggplot() +
 # Static map with ggplot2 - Ribeirão das Neves (municipality in RM Belo Horizonte)
 ggplot() +
   geom_sf(
-    data = sf_segregation_indices %>% filter(name_muni == "Ribeirão Das Neves" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_muni == "Ribeirão das Neves" & code_tract != "Total"),
     aes(fill = dissimilarity)
   ) +
   scale_fill_viridis_c() +
@@ -293,7 +289,7 @@ ggplot() +
 leaflet() %>%
   addTiles() %>%
   addPolygons(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "Rm Belo Horizonte" & code_tract != "Total"),
     fillColor = ~colorNumeric("viridis", dissimilarity)(dissimilarity),
     fillOpacity = 0.7,
     color = "white",
@@ -306,4 +302,3 @@ leaflet() %>%
     title = "Dissimilarity Index",
     position = "bottomright"
   )
-
