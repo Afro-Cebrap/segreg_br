@@ -215,3 +215,14 @@ calculate_global_h <- function(local_h) {
   
   return(global_results)
 }
+
+# Adds population proportion columns by racial group
+add_percent_cols <- function(df) {
+  df %>%
+    mutate(
+      percent_branca         = branca_total   / unit_total,
+      percent_preta          = preta_total    / unit_total,
+      percent_parda          = parda_total    / unit_total,
+      percent_preta_ou_parda = (preta_total + parda_total) / unit_total
+    )
+}
