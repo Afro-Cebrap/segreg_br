@@ -1,0 +1,55 @@
+name: Gui do Bosque Code Reviewer 🌳
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  id-token: write      # Essencial para o Workload Identity Federation funcionar
+  contents: read       # Para ler o código do repositório
+  pull-requests: write # Para o robô conseguir postar comentários nos Pull Requests
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install google-api-python-client google-auth google-genai
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/620861699805/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'gui-do-bosque@mapa-da-segregacao.iam.gserviceaccount.com'
+
+      - name: Run Gui do Bosque Reviewer
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python config/gui_bot_script.py
+
+      - name: Generate GitHub App Token
+        id: generate-token
+        if: github.event_name == 'pull_request'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GUI_BOT_APP_ID }}
+          private_key: ${{ secrets.GUI_BOT_PRIVATE_KEY }}
+
+      - name: Post Comment on PR
+        if: github.event_name == 'pull_request' && hashFiles('review_output.md') != ''
+        uses: mshick/add-pr-comment@v2
+        with:
+          repo-token: ${{ steps.generate-token.outputs.token }}
+          message-path: review_output.md
