@@ -16,9 +16,8 @@ library(sfarrow) # For reading and writing spatial data in Parquet format
 
 # Custom functions to calculate segregation indices
 #source("scripts/utils_segregation.R")
-source(here::here(
-  "R", "utils_segregation.R")
-)
+source(here::here
+       ("src", "utils", "utils_segregation.R"))
 
 # 1. Inputs ---------------------------------------------------------------
 
@@ -80,7 +79,9 @@ for(st in lista_estados) {
     agregate_local_expo = agregate_local_expo,
     agragate_global_expo = agragate_global_expo,
     local_index_h = local_index_h,
-    global_index_h = global_index_h
+    global_index_h = global_index_h,
+    percent_summary = tracts_segreg %>%
+      distinct(unit_id, unit_total, branca_total, preta_total, parda_total)
   )
   
   message("--- Process completed: ", st, " ---")
@@ -214,6 +215,34 @@ sf_totals_rm <- sf_geo_br %>%
   )
 
 sf_segregation_indices <- bind_rows(sf_tracts, sf_totals_muni, sf_totals_rm)
+
+# Adds population proportion columns by racial group.
+# Combine percent summaries from all states and compute ratios
+percent_summary <- bind_rows(map(all_results, "percent_summary")) %>%
+  add_percent_cols() %>%
+  select(unit_id, starts_with("percent_"))
+
+# Split by level: RM (unit_id is a name, not numeric) vs municipality
+percent_rm <- percent_summary %>%
+  filter(!str_detect(unit_id, "^\\d+$")) %>%
+  rename(name_metro = unit_id)
+
+percent_muni <- percent_summary %>%
+  filter(str_detect(unit_id, "^\\d+$")) %>%
+  rename(code_muni = unit_id)
+
+# Join onto the sf — RM rows match on name_metro, muni rows on code_muni
+sf_segregation_indices <- sf_segregation_indices %>%
+  left_join(percent_rm,   by = "name_metro") %>%
+  left_join(percent_muni, by = "code_muni",
+            suffix = c("", ".muni")) %>%
+  mutate(
+    across(starts_with("percent_") & !ends_with(".muni"),
+           ~ coalesce(.x, get(paste0(cur_column(), ".muni"))))
+  ) %>%
+  select(-ends_with(".muni"))
+
+
 
 # 3. Export ---------------------------------------------------------------
 
