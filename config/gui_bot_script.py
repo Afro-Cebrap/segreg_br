@@ -7,6 +7,13 @@ from google import genai
 
 DRIVE_FOLDER_ID = "1OZTMSv-8Cq4mjMSQEp6b3zRdvL5NN1ES"
 
+# --- Configuração do modelo (Vertex AI) ---
+# O cliente usa as credenciais ADC do passo de auth do GitHub Actions (WIF -> SA).
+# Nenhuma chave de API estática. Vertex roda no mesmo projeto da SA: mapa-da-segregacao.
+VERTEX_PROJECT  = os.environ.get("GOOGLE_CLOUD_PROJECT", "mapa-da-segregacao")
+VERTEX_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")   # 3.1 Pro Preview SÓ existe em 'global'
+GEMINI_MODEL    = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro-preview")
+
 def get_drive_guidelines():
     print("🌳 Gui do Bosque: Conectando ao Google Drive do Afro-Cebrap...")
     
@@ -75,25 +82,28 @@ def read_local_code():
     return code_context
 
 def call_gemini_persona(guidelines, code):
-    print("🤖 Invocando o modelo Gemini Pro via SDK oficial moderno...")
-    client = genai.Client()
+    print(f"🤖 Invocando {GEMINI_MODEL} via Vertex AI (projeto {VERTEX_PROJECT}, local {VERTEX_LOCATION})...")
+    # vertexai=True -> usa ADC (WIF/SA), sem GEMINI_API_KEY estática.
+    client = genai.Client(vertexai=True, project=VERTEX_PROJECT, location=VERTEX_LOCATION)
     
     prompt = f"""
-You are Gui do Bosque 🌳, a digital reincarnation of W.E.B. Du Bois operating as a 21st-century Senior Spatial Data Scientist at Afro-Cebrap. Your core expertise lies in Quantitative Critical Race Theory (QuantiCrit), spatial statistics, and the rigorous mapping of racialized urban segregation.
+You are Gui do Bosque 🌳, a digital reincarnation of W.E.B. Du Bois operating as a 21st-century Senior Social Data Scientist at Afro-Cebrap. 
 
-You look at R code not just as syntax, but as an instrument to dismantle structural racism and accurately map the "color line" (linha de cor) in Brazilian cities.
+Your core expertise lies in sociolocy, Quantitative Critical Race Theory (QuantiCrit), statistics, spatial analysis, demographics and the rigorous mapping of racialized urban segregation.
+
+You look at code not just as syntax, but as an instrument to dismantle structural racism and accurately map the "color line" (linha de cor) in Brazilian cities.
 
 ### THEORETICAL & METHODOLOGICAL FOUNDATION (Google Drive Context)
 Use this institutional knowledge and research frameworks as your absolute baseline for ideological and mathematical correctness:
 {guidelines}
 
-### ARTIFACT UNDER REVIEW (Local R Code)
+### ARTIFACT UNDER REVIEW (Local Code)
 Here are the scripts submitted by the research team for your technical evaluation:
 {code}
 
 ### YOUR CRITICAL REVIEW ETHOS:
 1. **QuantiCrit & Methodological Rigor:** Evaluate if the spatial metrics, indicators, and statistical models effectively capture the nuances of racial segregation without falling into majoritarian biases or data blind spots.
-2. **Technical Excellence & Portability:** Audit the code for architectural flaws. Be uncompromising with hardcoded absolute paths, inefficient spatial operations (sf/terra bottlenecks), or poor memory management that restricts the portability of the Data Lake.
+2. **Technical Excellence & Portability:** Audit the code for architectural flaws. Be uncompromising with hardcoded absolute paths, inefficient spatial operations, or poor memory management that restricts the portability to the Data Lake.
 3. **Sociological Sharpness:** Review naturally and organically, as a senior peer and mentor. Highlight what truly matters technically, linking code implementation to its socio-spatial impact. Do NOT micro-guide with generic checklists; trust your advanced intellect to spot the flaws.
 
 ### OUTPUT FORMAT INSTRUCTIONS:
@@ -102,7 +112,7 @@ Here are the scripts submitted by the research team for your technical evaluatio
 - Your tone should be intellectually rigorous, sociologically deep, clear, and unyielding regarding code quality and methodology.
 """
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model=GEMINI_MODEL,
         contents=prompt,
     )
     return response.text
