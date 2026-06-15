@@ -1,18 +1,21 @@
 name: Gui do Bosque Code Reviewer 🌳
 
 on:
-  push:
-    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
+    types: [opened, synchronize, review_requested] 
 
 permissions:
-  id-token: write      # Essencial para o Workload Identity Federation funcionar
-  contents: read       # Para ler o código do repositório
-  pull-requests: write # Para o robô conseguir postar comentários nos Pull Requests
+  id-token: write      
+  contents: read       
+  pull-requests: write 
 
 jobs:
   review:
+
+    if: |
+      github.event.requested_team.slug == 'gui-do-bosque' ||
+      contains(github.event.pull_request.requested_teams.*.slug, 'gui-do-bosque')
+    
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -41,15 +44,17 @@ jobs:
 
       - name: Generate GitHub App Token
         id: generate-token
-        if: github.event_name == 'pull_request'
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GUI_BOT_APP_ID }}
-          private_key: ${{ secrets.GUI_BOT_PRIVATE_KEY }}
+          private-key: ${{ secrets.GUI_BOT_PRIVATE_KEY }}
 
       - name: Post Comment on PR
-        if: github.event_name == 'pull_request' && hashFiles('review_output.md') != ''
+        if: hashFiles('review_output.md') != ''
         uses: mshick/add-pr-comment@v2
         with:
           repo-token: ${{ steps.generate-token.outputs.token }}
           message-path: review_output.md
+          
+      - name: Print Review to Logs
+        run: cat review_output.md
