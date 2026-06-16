@@ -1,0 +1,52 @@
+name: Build Gui do Bosque Knowledge Base 🌳📚
+
+on:
+  workflow_dispatch:           # acionamento manual
+  schedule:
+    - cron: '0 6 * * 1'        # toda segunda-feira, 06:00 UTC
+
+permissions:
+  contents: write   # para commitar o cache atualizado de volta ao repo
+  id-token: write   # Workload Identity Federation
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade google-api-python-client google-auth "google-genai>=1.51.0" pypdf
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/620861699805/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'gui-do-bosque@mapa-da-segregacao.iam.gserviceaccount.com'
+
+      - name: Build knowledge base
+        env:
+          GOOGLE_CLOUD_PROJECT: 'mapa-da-segregacao'
+          GOOGLE_CLOUD_LOCATION: 'global'
+          GEMINI_MODEL: 'gemini-3.1-pro-preview'
+        run: |
+          python config/build_knowledge_base.py
+
+      - name: Commit updated cache
+        run: |
+          git config user.name  "gui-do-bosque[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/guidelines_cache.md
+          if git diff --staged --quiet; then
+            echo "Sem mudanças na base de conhecimento."
+          else
+            git commit -m "chore: atualiza base de conhecimento do Gui do Bosque 🌳📚"
+            git push
+          fi
