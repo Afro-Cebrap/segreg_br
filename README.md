@@ -11,22 +11,30 @@ This project implements a sequential pipeline to estimate racial segregation ind
 ```text
 src/                    # Source code for pipelines and business logic
 ├── utils/              # Helper functions (GCS connections, segregation formulas)
-├── 01_geo_br.R         # Initial censobr/geobr load to GCP/Local
-├── 02_population.R     # Spatial joins and demographic cleaning
-└── 03_mvp_...          # Matrix calculation of segregation indices
-sandbox/                # Drafts, local validations, and QGIS tests
+├── 01_geo_br.R         # Geo data prep (geobr) -> data/2_silver (transformed)
+├── 02_population.R     # Census pull (censobr) -> data/1_bronze (raw)
+└── 03_mvp_...          # Matrix calculation of segregation indices -> data/3_gold
+sandbox/                # Drafts, local validations, and QGIS tests (never sourced by src/)
+services/               # Delivery layer / data products
+├── app_shiny/          # Interactive R/Shiny panel
+├── api/                # External data endpoints (Plumber/FastAPI)
+└── plataform/          # Front-ends / landing pages
 reports/                # Methodological notes, dynamic reports, and articles (Quarto/Rmd)
-config/                 # Environment parameters, variables, and schemas
+config/                 # Environment parameters, variables, and schemas (no credentials)
 tests/                  # Automated unit tests (testthat)
-data/
+data/                   # Local mirror of the medallion data lake (contents git-ignored)
 ├── 1_bronze/           # Raw cache of census and original vector data
-├── 2_silver/           # Cleaned and standardized data at census tract level
+├── 2_silver/           # Cleaned/integrated data (e.g. geo_br)
 ├── 3_gold/             # Consolidated final indices and aggregates
-└── metadata/           # Schema files and structured Data Lake dictionaries
+└── metadata/           # Data dictionary + datapackage.json (VERSIONED)
 makefile                # Declarative orchestrator for infrastructure and execution
 README.md               # Setup instructions and ecosystem overview
 LICENSE.md              # MIT License
 ```
+
+> **Medallion tiering.** Raw `read_*()` pulls land in `1_bronze`; transformed/joined
+> products in `2_silver`; consumption-ready indices in `3_gold`. Tier *contents* are
+> git-ignored (skeleton preserved via `.gitkeep`); `data/metadata/` is versioned.
 
 ## Setup & Execution
 

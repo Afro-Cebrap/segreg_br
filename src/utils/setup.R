@@ -25,15 +25,24 @@ missing <- !sapply(critical_packages, function(pkg) {
 })
 
 if (any(missing)) {
-  cat("⚠️  Missing packages:", paste(names(missing)[missing], collapse = ", "), "\n")
-  cat("Installing missing packages...\n")
-  install.packages(critical_packages[missing])
+  missing_names <- paste(names(missing)[missing], collapse = ", ")
+  cat("⚠️  Missing packages after renv::restore():", missing_names, "\n")
+  stop(
+    "Reproducibility guard: packages are missing from the renv library.\n",
+    "Do NOT install them outside renv (that desyncs the lockfile).\n",
+    "Fix the lockfile instead: renv::restore(), and if a dependency is genuinely\n",
+    "new, add it and run renv::snapshot() so renv.lock captures it.",
+    call. = FALSE
+  )
 } else {
   cat("✅ All critical packages installed!\n")
 }
 
-# 5. Create data directories if needed
-data_dirs <- c("data/1_bronze", "data/2_silver", "data/3_gold", "data/metadata", "sandbox", "config", "tests")
+# 5. Create project directories if needed
+data_dirs <- c(
+  "data/1_bronze", "data/2_silver", "data/3_gold", "data/metadata",
+  "sandbox", "config", "tests", "reports"
+)
 for (d in data_dirs) {
   if (!dir.exists(here::here(d))) {
     cat(paste0("Creating ", d, " directory...\n"))

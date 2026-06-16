@@ -15,7 +15,6 @@ library(arrow) # For reading and writing data in Parquet format
 library(sfarrow) # For reading and writing spatial data in Parquet format
 
 # Custom functions to calculate segregation indices
-#source("scripts/utils_segregation.R")
 source(here::here
        ("src", "utils", "utils_segregation.R"))
 
@@ -27,17 +26,17 @@ lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO",
                    "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", 
                    "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO")
 
-# Get geographic data for Brazil
+# Get geographic data for Brazil (silver: transformed/joined product from 01)
 sf_geo_br <- sfarrow::st_read_parquet(
   here(
-    "data", "1_raw", "geo_br.parquet")
+    "data", "2_silver", "geo_br.parquet")
 )
 
-# Get census tract data for Brazil
+# Get census tract data for Brazil (bronze: raw censobr pull from 02)
 # Could be incorporated in the function!!
 census_tracts_br <- arrow::read_parquet(
   here(
-    "data", "1_raw", "census_tracts_br.parquet")
+    "data", "1_bronze", "census_tracts_br.parquet")
 )
 
 # 2. Estimate -------------------------------------------------------------
@@ -244,31 +243,35 @@ sf_segregation_indices <- sf_segregation_indices %>%
 
 # 3. Export ---------------------------------------------------------------
 
-# creat folder if it doesn't exist
-fs::dir_create(here::here("outputs", "mvp"), showWarnings = FALSE)
+# GOLD tier: consolidated, consumption-ready indices. fs::dir_create is quiet
+# and recursive by default (no showWarnings argument — that belongs to base::dir.create).
+gold_dir <- here::here("data", "3_gold")
+fs::dir_create(gold_dir)
 
 # Get list of all segregation indices to export
 list_segregation_indices <- c(list_segregation_indices_global, list_segregation_indices_local)
 
-# export each index as a separate CSV file
+# export each index as a separate Parquet file (DAT-01: parquet for data layers)
 map2(
   list_segregation_indices,
   names(list_segregation_indices),
-  ~ write_csv(
+  ~ arrow::write_parquet(
     .x,
-    here::here("outputs", "mvp", paste0(.y, ".csv"))
+    here::here("data", "3_gold", paste0(.y, ".parquet"))
   )
 )
 
 # export the integrated data frame with all indices as a single parquet file
 sfarrow::st_write_parquet(
   sf_segregation_indices,
-  here::here("outputs", "mvp", "sf_segregation_indices.parquet")
+  here::here("data", "3_gold", "sf_segregation_indices.parquet")
 )
 
 # 4. Check ----------------------------------------------------------------
-
-# view data for RM Belo Horizonte
+# Exploratory previews (interactive maps/tables). Guarded by interactive() so a
+# pipeline run (Rscript / make) does not trigger view()/leaflet side effects.
+# For durable, shareable figures, prefer a notebook under reports/.
+if (interactive()) {
 sf_segregation_indices %>%
   filter(name_metro == "Rm Belo Horizonte") %>%
   view()
@@ -329,3 +332,4 @@ leaflet() %>%
     title = "Dissimilarity Index",
     position = "bottomright"
   )
+}
