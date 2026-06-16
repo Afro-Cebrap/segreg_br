@@ -32,7 +32,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install --upgrade google-api-python-client google-auth "google-genai>=1.51.0"
+          pip install --upgrade google-api-python-client google-auth "google-genai>=1.51.0" google-cloud-storage
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -42,12 +42,10 @@ jobs:
 
       - name: Run Gui do Bosque Reviewer
         env:
-          # Vertex AI no mesmo projeto da service account. Sem chave estática:
-          # o acesso usa a ADC do passo de auth (WIF -> SA).
           GOOGLE_CLOUD_PROJECT: 'mapa-da-segregacao'
-          GOOGLE_CLOUD_LOCATION: 'global'              # 3.1 Pro Preview só existe em 'global'
+          GOOGLE_CLOUD_LOCATION: 'global'
           GEMINI_MODEL: 'gemini-3.1-pro-preview'
-          # Contexto do PR: escopo do diff + instrução do mantenedor no corpo do PR.
+          KB_BUCKET: 'gui-do-bosque-kb'
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY:  ${{ github.event.pull_request.body }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
