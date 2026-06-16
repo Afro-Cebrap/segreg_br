@@ -1,16 +1,23 @@
 name: Gui do Bosque Code Reviewer 🌳
 
 on:
-  push:
-    branches: [ main, master ]
+  workflow_dispatch:  # Permite clicar em "Run workflow" manualmente
   pull_request:
     types: [opened, synchronize, review_requested]
-    branches: [ main, master ]
+    branches: [ feature/teste-avatar-gui, main, master ]
 
+# Least-privilege: o comentário no PR é postado com o token do GitHub App
+# (não com o GITHUB_TOKEN), então o GITHUB_TOKEN só precisa de leitura + OIDC.
 permissions:
-  id-token: write      # Essencial para o Workload Identity Federation funcionar
-  contents: read       # Para ler o código do repositório
-  pull-requests: write # Para o robô conseguir postar comentários nos Pull Requests
+  id-token: write   # Essencial para o Workload Identity Federation (WIF)
+  contents: read    # Para o checkout do código
+
+# Evita reviews duplicados: a cada novo push no mesmo PR, cancela o run anterior
+# que ainda estiver em andamento (o time continua "pending" como reviewer, então
+# 'synchronize' redispararia o bot a cada commit sem isto).
+concurrency:
+  group: gui-do-bosque-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   review:
@@ -19,9 +26,12 @@ jobs:
       contains(github.event.pull_request.requested_teams.*.slug, 'gui-do-bosque')
 
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # histórico completo para o 'git diff base..head' funcionar
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -29,8 +39,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
+        # O reviewer usa só o google-genai (Vertex AI). As libs de Drive/GCS
+        # pertencem ao build_knowledge_base.py, não a este passo.
         run: |
-          pip install --upgrade google-api-python-client google-auth "google-genai>=1.51.0"
+          pip install --upgrade "google-genai>=1.51.0" google-auth
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -40,11 +52,13 @@ jobs:
 
       - name: Run Gui do Bosque Reviewer
         env:
-          # Vertex AI no mesmo projeto da service account. Sem chave estática:
-          # o acesso usa a ADC do passo de auth (WIF -> SA).
           GOOGLE_CLOUD_PROJECT: 'mapa-da-segregacao'
-          GOOGLE_CLOUD_LOCATION: 'global'              # 3.1 Pro Preview só existe em 'global'
+          GOOGLE_CLOUD_LOCATION: 'global'
           GEMINI_MODEL: 'gemini-3.1-pro-preview'
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY:  ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python config/gui_bot_script.py
 
@@ -64,4 +78,5 @@ jobs:
           message-path: review_output.md
 
       - name: Print Review to Logs
+        if: hashFiles('review_output.md') != ''
         run: cat review_output.md
