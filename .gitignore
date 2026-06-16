@@ -11,11 +11,23 @@ renv/library/
 renv/python/
 renv/staging/
 
-# Data and Outputs
-data/
+# --- Data lake ---
+# Ignore the heavy artifacts in each tier, but keep the directory skeleton
+# (via .gitkeep) so the medallion structure survives a fresh clone.
+data/1_bronze/*
+data/2_silver/*
+data/3_gold/*
+!data/1_bronze/.gitkeep
+!data/2_silver/.gitkeep
+!data/3_gold/.gitkeep
+# Track versioned, human-curated metadata (data dictionaries, datapackage.json).
+!data/metadata/
+
+# Legacy output dir (no longer written by the pipeline; gold now lives in data/3_gold)
 outputs/
+
+# Spatial/data artifacts (anywhere)
 *.parquet
-*.csv
 *.shp
 *.shx
 *.dbf

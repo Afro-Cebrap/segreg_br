@@ -86,18 +86,17 @@ sf_geo_br <- bind_rows(
 
 # Export ------------------------------------------------------------------
 
-# Create data directory if it does not exist
-if (!dir.exists(here("data"))) {
-  dir.create(here("data"), recursive = TRUE)
-}
-if (!dir.exists(here("data","1_raw"))) {
-  dir.create(here("data","1_raw"), recursive = TRUE)
+# geo_br is a TRANSFORMED product (union of metro geometries + joins to the
+# municipality/tract hierarchy), so by medallion semantics it belongs in the
+# SILVER tier, not bronze/raw. Create the exact target subdirectory before writing.
+if (!dir.exists(here("data", "2_silver"))) {
+  dir.create(here("data", "2_silver"), recursive = TRUE)
 }
 
-# Export the combined geospatial data to a Parquet file
+# Export the combined geospatial data to a Parquet file (silver)
 sfarrow::st_write_parquet(
   sf_geo_br,
   here(
-    "data", "1_raw", "geo_br.parquet")
+    "data", "2_silver", "geo_br.parquet")
 )
 
