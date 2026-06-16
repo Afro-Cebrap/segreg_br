@@ -216,13 +216,12 @@ sf_totals_rm <- sf_geo_br %>%
 
 sf_segregation_indices <- bind_rows(sf_tracts, sf_totals_muni, sf_totals_rm)
 
-# Adds population proportion columns by racial group.
-# Combine percent summaries from all states and compute ratios
+#Adds population proportion columns by racial group.
 percent_summary <- bind_rows(map(all_results, "percent_summary")) %>%
   add_percent_cols() %>%
   select(unit_id, starts_with("percent_"))
 
-# Split by level: RM (unit_id is a name, not numeric) vs municipality
+#Split by level
 percent_rm <- percent_summary %>%
   filter(!str_detect(unit_id, "^\\d+$")) %>%
   rename(name_metro = unit_id)
@@ -231,7 +230,6 @@ percent_muni <- percent_summary %>%
   filter(str_detect(unit_id, "^\\d+$")) %>%
   rename(code_muni = unit_id)
 
-# Join onto the sf — RM rows match on name_metro, muni rows on code_muni
 sf_segregation_indices <- sf_segregation_indices %>%
   left_join(percent_rm,   by = "name_metro") %>%
   left_join(percent_muni, by = "code_muni",
