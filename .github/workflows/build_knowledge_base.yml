@@ -1,20 +1,32 @@
 name: Build Gui do Bosque Knowledge Base 🌳📚
 
 on:
-  workflow_dispatch:           # acionamento manual
+  workflow_dispatch:
   schedule:
-    - cron: '0 6 * * 1'        # toda segunda-feira, 06:00 UTC
+    - cron: '0 6 * * 1'
+  push:
+    branches: [ feature/teste-avatar-gui ]   # TEMPORÁRIO — remover antes do merge na main
 
 permissions:
-  contents: write   # para commitar o cache atualizado de volta ao repo
-  id-token: write   # Workload Identity Federation
+  contents: write
+  pull-requests: write
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GUI_BOT_APP_ID }}
+          private-key: ${{ secrets.GUI_BOT_PRIVATE_KEY }}
+
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -23,7 +35,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install --upgrade google-api-python-client google-auth "google-genai>=1.51.0" pypdf
+          pip install --upgrade google-api-python-client google-auth "google-genai>=1.51.0" google-cloud-storage pypdf
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -36,17 +48,29 @@ jobs:
           GOOGLE_CLOUD_PROJECT: 'mapa-da-segregacao'
           GOOGLE_CLOUD_LOCATION: 'global'
           GEMINI_MODEL: 'gemini-3.1-pro-preview'
+          KB_BUCKET: 'gui-do-bosque-kb'
         run: |
           python config/build_knowledge_base.py
 
-      - name: Commit updated cache
-        run: |
-          git config user.name  "gui-do-bosque[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add config/guidelines_cache.md
-          if git diff --staged --quiet; then
-            echo "Sem mudanças na base de conhecimento."
-          else
-            git commit -m "chore: atualiza base de conhecimento do Gui do Bosque 🌳📚"
-            git push
-          fi
+      - name: Upload digest as artifact (revisão no teste)
+        if: hashFiles('config/guidelines_cache.md') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: guidelines_cache
+          path: config/guidelines_cache.md
+
+      - name: Open PR with updated knowledge base
+        if: github.event_name != 'push'   # no teste por push, NÃO abre PR contra a main
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          add-paths: config/guidelines_cache.md
+          branch: chore/gui-do-bosque-kb
+          delete-branch: true
+          commit-message: "chore: atualiza base de conhecimento do Gui do Bosque 🌳📚"
+          title: "chore: atualiza base de conhecimento do Gui do Bosque 🌳📚"
+          body: |
+            Atualização automática da base de conhecimento destilada
+            (`config/guidelines_cache.md`), gerada a partir do Drive.
+
+            **Revise o digest antes de mesclar.** (A biblioteca crua vai para o GCS privado.)

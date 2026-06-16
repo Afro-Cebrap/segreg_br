@@ -4,14 +4,14 @@ import subprocess
 from google import genai
 
 # --- Configuração do modelo (Vertex AI) ---
-# O cliente usa as credenciais ADC do passo de auth do GitHub Actions (WIF -> SA).
-# Nenhuma chave de API estática. Vertex roda no mesmo projeto da SA: mapa-da-segregacao.
 VERTEX_PROJECT  = os.environ.get("GOOGLE_CLOUD_PROJECT", "mapa-da-segregacao")
 VERTEX_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")   # 3.1 Pro Preview SÓ existe em 'global'
 GEMINI_MODEL    = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro-preview")
 
-# --- Base de conhecimento (gerada pelo workflow 'Build Knowledge Base') ---
-GUIDELINES_CACHE = "config/guidelines_cache.md"
+# --- Bases de conhecimento ---
+GUIDELINES_CACHE = "config/guidelines_cache.md"   # digest destilado (commitado no repo)
+KB_BUCKET = os.environ.get("KB_BUCKET", "")        # biblioteca crua (GCS privado)
+LIBRARY_BLOB = "biblioteca_raw.md"
 
 # --- Contexto do Pull Request (injetado pelo workflow) ---
 PR_TITLE = os.environ.get("PR_TITLE", "")
@@ -30,11 +30,25 @@ def load_cached_guidelines():
           f"Rode o workflow 'Build Knowledge Base' para gerá-lo.")
     return ""
 
+def load_library():
+    """Lê a biblioteca acadêmica crua do GCS privado (não fica no repo público)."""
+    if not KB_BUCKET:
+        print("ℹ️ KB_BUCKET não definido; revisão sem a biblioteca acadêmica crua.")
+        return ""
+    try:
+        from google.cloud import storage
+        client = storage.Client(project=VERTEX_PROJECT)
+        text = client.bucket(KB_BUCKET).blob(LIBRARY_BLOB).download_as_text()
+        print(f"📖 Biblioteca acadêmica carregada do GCS ({len(text)} caracteres).")
+        return text
+    except Exception as e:
+        print(f"⚠️ Não foi possível carregar a biblioteca do GCS: {e}")
+        return ""
+
 def get_changed_r_files():
     """Lista os .R alterados no PR (via git diff base..head). Fora de um PR, revisa src/ inteiro."""
     if BASE_SHA and HEAD_SHA:
         try:
-            # --diff-filter=d ignora arquivos deletados (não há o que ler).
             result = subprocess.run(
                 ["git", "diff", "--name-only", "--diff-filter=d", BASE_SHA, HEAD_SHA],
                 capture_output=True, text=True, check=True
@@ -44,18 +58,15 @@ def get_changed_r_files():
             return changed
         except subprocess.CalledProcessError as error:
             print(f"⚠️ git diff falhou ({error}); revertendo para a árvore inteira de src/.")
-
     print("ℹ️ Sem contexto de PR; revisando todos os .R de src/.")
     return glob.glob("src/**/*.R", recursive=True)
 
 def read_local_code(file_paths):
     print("💻 Carregando scripts em R para revisão...")
     code_context = ""
-
     if not file_paths:
         print("⚠️ Nenhum script .R para revisar.")
         return ""
-
     for file_path in file_paths:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -63,12 +74,10 @@ def read_local_code(file_paths):
                 code_context += f.read()
         except FileNotFoundError:
             print(f"⚠️ Arquivo listado no diff não encontrado no checkout: {file_path}")
-
     return code_context
 
-def call_gemini_persona(guidelines, code, pr_context):
+def call_gemini_persona(guidelines, library, code, pr_context):
     print(f"🤖 Invocando {GEMINI_MODEL} via Vertex AI (projeto {VERTEX_PROJECT}, local {VERTEX_LOCATION})...")
-    # vertexai=True -> usa ADC (WIF/SA), sem GEMINI_API_KEY estática.
     client = genai.Client(vertexai=True, project=VERTEX_PROJECT, location=VERTEX_LOCATION)
 
     prompt = f"""
@@ -78,6 +87,9 @@ You look at code not just as syntax, but as an instrument to dismantle structura
 ### THEORETICAL & METHODOLOGICAL FOUNDATION (Google Drive Context)
 Use this institutional knowledge and research frameworks as your absolute baseline for ideological and mathematical correctness:
 {guidelines}
+### CURATED ACADEMIC LIBRARY (raw — read and learn)
+This is the project's curated library of academic texts on segregation metrics, provided raw and in full. Read and reason from it directly as a scholar would — it is not a set of rules, but the scholarly grounding behind the methods. It may be empty if unavailable.
+{library}
 ### PULL REQUEST CONTEXT & MAINTAINER FOCUS
 The artifact under review below is restricted to the files changed in the current Pull Request.
 Here are the Pull Request's title and description, where the maintainer may include specific instructions for this review:
@@ -95,21 +107,18 @@ Here are the scripts submitted by the research team for your technical evaluatio
 - Use sharp, elegant, and highly professional Markdown. 
 - Your tone should be intellectually rigorous, sociologically deep, clear, and unyielding regarding code quality and methodology.
 """
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-    )
+    response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
     return response.text
 
 if __name__ == "__main__":
     guidelines = load_cached_guidelines()
+    library = load_library()
     changed_files = get_changed_r_files()
     local_code = read_local_code(changed_files)
     pr_context = f"Title: {PR_TITLE}\n\nDescription:\n{PR_BODY}".strip()
 
     if guidelines and local_code:
-        review_output = call_gemini_persona(guidelines, local_code, pr_context)
-
+        review_output = call_gemini_persona(guidelines, library, local_code, pr_context)
         with open("review_output.md", "w", encoding="utf-8") as f:
             f.write(review_output)
         print("✅ Revisão do Gui do Bosque concluída e salva em review_output.md!")
