@@ -3,18 +3,26 @@ name: Build Gui do Bosque Knowledge Base 🌳📚
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 6 * * 1'
-  push:
-    branches: [ feature/teste-avatar-gui ]   # TEMPORÁRIO — remover antes do merge na main
+    - cron: '0 6 * * 1'   # toda segunda, 06:00 UTC
 
+# Least-privilege: checkout, commit e abertura de PR usam o token do GitHub App
+# (steps.app-token), cujas permissões ficam no nível do App. O GITHUB_TOKEN só
+# precisa do OIDC para o Workload Identity Federation.
 permissions:
-  contents: write
-  pull-requests: write
   id-token: write
+  contents: read
+
+# Os runs escrevem na mesma branch (chore/gui-do-bosque-kb); evitamos sobreposição
+# entre um disparo manual e o agendado. NÃO cancelamos o run em andamento para não
+# interromper um upload da biblioteca crua no GCS pela metade — o novo run espera.
+concurrency:
+  group: build-knowledge-base
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Generate GitHub App Token
         id: app-token
@@ -60,7 +68,7 @@ jobs:
           path: config/guidelines_cache.md
 
       - name: Open PR with updated knowledge base
-        if: github.event_name != 'push'   # no teste por push, NÃO abre PR contra a main
+        if: hashFiles('config/guidelines_cache.md') != ''
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ steps.app-token.outputs.token }}

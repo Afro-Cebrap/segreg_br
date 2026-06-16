@@ -1,6 +1,7 @@
 import os
 import io
 import datetime
+import unicodedata
 import google.auth
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -21,19 +22,57 @@ GEMINI_MODEL    = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro-preview")
 KB_BUCKET = os.environ.get("KB_BUCKET", "")
 
 # --- Curadoria: o que NÃO entra na base de conhecimento ---
-EXCLUDE_FOLDERS = {"esbocos"}
-EXCLUDE_NAME_MARKERS = ["cópia de", "[em construção]"]
+# Os valores são comparados de forma normalizada (minúsculas, sem acento),
+# então "Esboços", "esboços" e "ESBOCOS" são todos excluídos.
+EXCLUDE_FOLDERS = {"esbocos", "esboços", "rascunhos"}
+EXCLUDE_NAME_MARKERS = ["cópia de", "[em construção]", "rascunho"]
 
 # --- Fontes primárias / biblioteca ---
 PRIMARY_FOLDER_MARKERS = ["biblioteca"]
 PRIMARY_NAME_MARKERS = ["compendio_territorios_negros"]
 
 
+def norm(text):
+    """Minúsculas + remoção de acentos, para comparações robustas de nomes do Drive."""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", text.lower())
+        if not unicodedata.combining(c)
+    )
+
+
+# Conjuntos/markers normalizados uma única vez
+_EXCLUDE_FOLDERS_NORM = {norm(f) for f in EXCLUDE_FOLDERS}
+_EXCLUDE_MARKERS_NORM = [norm(m) for m in EXCLUDE_NAME_MARKERS]
+
+
 def is_primary_source(name, current_path):
-    low_path = current_path.lower()
-    low_name = name.lower()
+    low_path = norm(current_path)
+    low_name = norm(name)
     return any(m in low_path for m in PRIMARY_FOLDER_MARKERS) or \
            any(low_name.startswith(m) for m in PRIMARY_NAME_MARKERS)
+
+
+def list_children(service, folder_id):
+    """Lista TODOS os filhos de uma pasta, paginando até o fim.
+
+    Sem isso, a API do Drive devolve no máximo 100 itens por chamada e o
+    restante é descartado silenciosamente — truncando a base de conhecimento.
+    """
+    files, page_token = [], None
+    while True:
+        resp = service.files().list(
+            q=f"'{folder_id}' in parents and trashed = false",
+            fields="nextPageToken, files(id, name, mimeType)",
+            pageSize=1000,
+            pageToken=page_token,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute()
+        files.extend(resp.get("files", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return files
 
 
 def read_google_sheet(sheets_service, file_id, name):
@@ -69,27 +108,23 @@ def crawl_drive_corpus():
     def crawl_folder(folder_id, current_path="Raiz"):
         text_accumulated = ""
         try:
-            results = service.files().list(
-                q=f"'{folder_id}' in parents and trashed = false",
-                fields="files(id, name, mimeType)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
-            ).execute()
+            items = list_children(service, folder_id)
         except HttpError as error:
             print(f"❌ Erro ao listar a pasta {current_path}: {error}", flush=True)
             return text_accumulated
 
-        for item in results.get('files', []):
+        for item in items:
             mime = item['mimeType']
             name = item['name']
+            norm_name = norm(name)
 
             try:
-                if any(marker in name.lower() for marker in EXCLUDE_NAME_MARKERS):
+                if any(marker in norm_name for marker in _EXCLUDE_MARKERS_NORM):
                     print(f"⏭️ Pulado (rascunho/duplicata): {name}", flush=True)
                     continue
 
                 if mime == 'application/vnd.google-apps.folder':
-                    if name in EXCLUDE_FOLDERS:
+                    if norm_name in _EXCLUDE_FOLDERS_NORM:
                         print(f"⏭️ Pulando pasta não-canônica: {current_path}/{name}", flush=True)
                         continue
                     print(f"📁 Subpasta: {current_path} -> {name}", flush=True)
@@ -97,7 +132,7 @@ def crawl_drive_corpus():
                     continue
 
                 tag = "FONTE PRIMÁRIA/AUTORITATIVA — " if is_primary_source(name, current_path) else ""
-                in_biblioteca = "biblioteca" in current_path.lower()
+                in_biblioteca = "biblioteca" in norm(current_path)
                 block = ""
 
                 if mime == 'application/vnd.google-apps.document':
@@ -111,7 +146,7 @@ def crawl_drive_corpus():
 
                 elif 'text' in mime or name.endswith(('.md', '.txt')):
                     print(f"📄 Texto: [{current_path}] {name}", flush=True)
-                    request = service.files().get_media(fileId=item['id'], supportsAllDrives=True) # Corrigido aqui
+                    request = service.files().get_media(fileId=item['id'], supportsAllDrives=True)
                     fh = io.BytesIO()
                     downloader = MediaIoBaseDownload(fh, request)
                     done = False
@@ -122,15 +157,15 @@ def crawl_drive_corpus():
 
                 elif mime == 'application/pdf' or name.lower().endswith('.pdf'):
                     print(f"📕 PDF: [{current_path}] {name}", flush=True)
-                    request = service.files().get_media(fileId=item['id'], supportsAllDrives=True) # Corrigido aqui
+                    request = service.files().get_media(fileId=item['id'], supportsAllDrives=True)
                     fh = io.BytesIO()
                     downloader = MediaIoBaseDownload(fh, request)
                     done = False
                     while done is False:
                         _, done = downloader.next_chunk()
                     pdf_bytes = fh.getvalue()
-                    
-                    # Mantendo a validação de integridade e diagnóstico ativa por segurança
+
+                    # Validação de integridade: às vezes a API devolve um HTML de erro no lugar do binário.
                     if not pdf_bytes.startswith(b'%PDF'):
                         try:
                             error_payload = pdf_bytes.decode('utf-8', errors='ignore')
@@ -139,7 +174,7 @@ def crawl_drive_corpus():
                         except Exception:
                             print(f"⚠️ Falha: O arquivo '{name}' não retornou um binário PDF e não pôde ser decodificado.", flush=True)
                         continue
-                    
+
                     text = ""
                     try:
                         reader = PdfReader(io.BytesIO(pdf_bytes))
@@ -187,18 +222,24 @@ This is guidance, not a checklist: let the substance emerge from the sources the
 rather than from predefined topics.
 - Treat the curated academic library (folder "biblioteca") and the project compendium \
   ("compendio_territorios_negros") as the primary, authoritative sources. Preserve their \
-  conceptual depth; do not compress them into shallow bullets.
+  CONCEPTUAL depth — the ideas, definitions, distinctions and methodological reasoning.
 - Sources vary in maturity and authority. Prefer ratified, consolidated material over \
   loose notes; where sources disagree, surface the disagreement instead of silently \
   choosing; mark anything drawn from draft or "[EM CONSTRUÇÃO]" material as provisional.
 
+IMPORTANT — this digest is committed to a PUBLIC repository, while the raw library is \
+kept private for copyright reasons. Therefore: synthesize and paraphrase the methodology \
+in your own words. Do NOT reproduce long verbatim passages from the source texts. Any \
+direct quotation must be short (a sentence or less) and clearly attributed. Capture the \
+*reasoning and specifications*, not the original wording.
+
 Cite sources in parentheses where a point comes from a specific text. Use clear Markdown. \
-Let the length follow the material — be thorough where the sources are rich.
+Let the length follow the material — be thorough on substance where the sources are rich.
 
 CORPUS:
 """
 
-CHUNK_SIZE = 200_000
+CHUNK_SIZE = 400_000
 
 def distill(corpus):
 
@@ -256,6 +297,10 @@ Prioritize:
 - methodological caveats
 - disagreements between sources
 
+This handbook is committed to a PUBLIC repository: write in your own words and avoid
+reproducing long verbatim passages from the original sources. Keep any direct quotation
+short and attributed.
+
 Use Markdown.
 
 SUMMARIES:
@@ -278,11 +323,14 @@ if __name__ == "__main__":
     print(f"📦 Corpus bruto extraído: {len(corpus)} caracteres.", flush=True)
     digest = distill(corpus)
 
-    stamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     header = (
-        f"\n"
-        f"\n"
-        f"\n\n"
+        f"<!-- ============================================================= -->\n"
+        f"<!-- ARQUIVO GERADO AUTOMATICAMENTE por config/build_knowledge_base.py -->\n"
+        f"<!-- Gerado em: {stamp}                                              -->\n"
+        f"<!-- NÃO edite à mão: alterações serão sobrescritas no próximo build. -->\n"
+        f"<!-- A biblioteca crua fica no GCS privado (não vai para este repo).  -->\n"
+        f"<!-- ============================================================= -->\n\n"
     )
     os.makedirs("config", exist_ok=True)
     with open(CACHE_PATH, "w", encoding="utf-8") as f:
