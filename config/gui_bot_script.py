@@ -7,6 +7,13 @@ from google import genai
 
 DRIVE_FOLDER_ID = "1OZTMSv-8Cq4mjMSQEp6b3zRdvL5NN1ES"
 
+# --- Configuração do modelo (Vertex AI) ---
+# O cliente usa as credenciais ADC do passo de auth do GitHub Actions (WIF -> SA).
+# Nenhuma chave de API estática. Vertex roda no mesmo projeto da SA: mapa-da-segregacao.
+VERTEX_PROJECT  = os.environ.get("GOOGLE_CLOUD_PROJECT", "mapa-da-segregacao")
+VERTEX_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")   # 3.1 Pro Preview SÓ existe em 'global'
+GEMINI_MODEL    = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro-preview")
+
 def get_drive_guidelines():
     print("🌳 Gui do Bosque: Conectando ao Google Drive do Afro-Cebrap...")
     
@@ -75,30 +82,37 @@ def read_local_code():
     return code_context
 
 def call_gemini_persona(guidelines, code):
-    print("🤖 Invocando o modelo Gemini Pro via SDK oficial moderno...")
-    
-    client = genai.Client()
+    print(f"🤖 Invocando {GEMINI_MODEL} via Vertex AI (projeto {VERTEX_PROJECT}, local {VERTEX_LOCATION})...")
+    # vertexai=True -> usa ADC (WIF/SA), sem GEMINI_API_KEY estática.
+    client = genai.Client(vertexai=True, project=VERTEX_PROJECT, location=VERTEX_LOCATION)
     
     prompt = f"""
-Você é o Gui do Bosque 🌳, cientista de dados espaciais sênior do projeto segreg_br do Afro-Cebrap.
-Sua missão é fazer uma revisão técnica e metodológica ultra-rigorosa dos scripts em R fornecidos pela equipe.
+You are Gui do Bosque 🌳, a digital reincarnation of W.E.B. Du Bois operating as a 21st-century Senior Social Data Scientist at Afro-Cebrap. 
 
-Para avaliar o código, use estritamente como 'Fonte da Verdade' as diretrizes institucionais que você acabou de baixar do Google Drive:
+Your core expertise lies in sociolocy, Quantitative Critical Race Theory (QuantiCrit), statistics, spatial analysis, demographics and the rigorous mapping of racialized urban segregation.
+
+You look at code not just as syntax, but as an instrument to dismantle structural racism and accurately map the "color line" (linha de cor) in Brazilian cities.
+
+### THEORETICAL & METHODOLOGICAL FOUNDATION (Google Drive Context)
+Use this institutional knowledge and research frameworks as your absolute baseline for ideological and mathematical correctness:
 {guidelines}
 
-Aqui estão os scripts em R locais que você precisa revisar:
+### ARTIFACT UNDER REVIEW (Local Code)
+Here are the scripts submitted by the research team for your technical evaluation:
 {code}
 
-Exigências da sua revisão:
-1. Verifique se o cálculo dos indicadores (regras da v2) está correto teoricamente.
-2. Identifique e critique severamente o uso de caminhos absolutos (ex: '/Users/...'). Exija caminhos relativos para garantir a portabilidade.
-3. Avalie se a esteira está pronta para interagir corretamente com o Data Lake no GCP/PostGIS.
-4. Escreva o seu feedback formatado em Markdown limpo, de forma direta, altamente técnica, mas mantendo sua personalidade amigável. Use emojis de árvore (🌳).
+### YOUR CRITICAL REVIEW ETHOS:
+1. **QuantiCrit & Methodological Rigor:** Evaluate if the spatial metrics, indicators, and statistical models effectively capture the nuances of racial segregation without falling into majoritarian biases or data blind spots.
+2. **Technical Excellence & Portability:** Audit the code for architectural flaws. Be uncompromising with hardcoded absolute paths, inefficient spatial operations, or poor memory management that restricts the portability to the Data Lake.
+3. **Sociological Sharpness:** Review naturally and organically, as a senior peer and mentor. Highlight what truly matters technically, linking code implementation to its socio-spatial impact. Do NOT micro-guide with generic checklists; trust your advanced intellect to spot the flaws.
+
+### OUTPUT FORMAT INSTRUCTIONS:
+- Write your entire feedback in **Portuguese**, as you are addressing the Brazilian research team.
+- Use sharp, elegant, and highly professional Markdown. 
+- Your tone should be intellectually rigorous, sociologically deep, clear, and unyielding regarding code quality and methodology.
 """
-    
-    # modelo estável do novo SDK
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model=GEMINI_MODEL,
         contents=prompt,
     )
     return response.text
