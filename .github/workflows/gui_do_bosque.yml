@@ -1,11 +1,10 @@
 name: Gui do Bosque Code Reviewer 🌳
 
 on:
-  push:
-    branches: [ main, master ]
+  workflow_dispatch:  # Permite que você clique em "Run workflow" manualmente se quiser
   pull_request:
     types: [opened, synchronize, review_requested]
-    branches: [ main, master ]
+    branches: [ feature/teste-avatar-gui, main, master ] # Garante que escute sua branch de testes
 
 permissions:
   id-token: write      # Essencial para o Workload Identity Federation funcionar
@@ -14,9 +13,9 @@ permissions:
 
 jobs:
   review:
-    if: |
-      github.event.requested_team.slug == 'gui-do-bosque' ||
-      contains(github.event.pull_request.requested_teams.*.slug, 'gui-do-bosque')
+    # if: |
+    #   github.event.requested_team.slug == 'gui-do-bosque' ||
+    #   contains(github.event.pull_request.requested_teams.*.slug, 'gui-do-bosque')
 
     runs-on: ubuntu-latest
     steps:
