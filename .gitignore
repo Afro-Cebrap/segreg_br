@@ -1,32 +1,85 @@
-.Rproj.user
-.Rhistory
-.RData
-.Ruserdata
+# =====================================================================
+#  .gitignore — territorios_negros / segreg_br (Afro-Cebrap)
+# =====================================================================
 
-# OS specific
+# --- macOS ---
 .DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+Icon?
+._*
+.Spotlight-V100
+.Trashes
 
-# Environment
+# --- Windows ---
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.cab
+*.lnk
+desktop.ini
+
+# --- Editores / office (temporários) ---
+*.swp
+*.swo
+*.tmp
+*.bak
+*~
+~$*.doc*
+~$*.xls*
+~$*.ppt*
+
+# --- R: history / session / user ---
+.Rhistory
+.Rapp.history
+.RData
+.RDataTmp
+.Ruserdata
+.Renviron
+
+# --- R: build / check ---
+*-Ex.R
+/*.tar.gz
+/*.Rcheck/
+
+# --- RStudio / httr ---
+.Rproj.user/
+.httr-oauth
+
+# --- knitr / R Markdown ---
+*_cache/
+/cache/
+*.utf8.md
+*.knit.md
+
+# --- vignettes / pkgdown ---
+vignettes/*.html
+vignettes/*.pdf
+docs/
+
+# --- renv ---
 renv/library/
 renv/python/
 renv/staging/
 
-# --- Data lake ---
-# Ignore the heavy artifacts in each tier, but keep the directory skeleton
-# (via .gitkeep) so the medallion structure survives a fresh clone.
-data/1_bronze/*
-data/2_silver/*
-data/3_gold/*
-!data/1_bronze/.gitkeep
-!data/2_silver/.gitkeep
-!data/3_gold/.gitkeep
-# Track versioned, human-curated metadata (data dictionaries, datapackage.json).
-!data/metadata/
+# --- misc tooling ---
+po/*~
+rsconnect/
+.positai
 
-# Legacy output dir (no longer written by the pipeline; gold now lives in data/3_gold)
+# =====================================================================
+#  Dados — NUNCA versionar (vão para o data lake / GCS)
+# =====================================================================
+# Espelho local do data lake e diretório legado de saídas
+data/
 outputs/
 
-# Spatial/data artifacts (anywhere)
+# Artefatos de dados em QUALQUER lugar (ex.: sandbox/qgis/).
+# É esta seção que evita commitar um CSV/parquet gigante por acidente.
+*.csv
 *.parquet
 *.shp
 *.shx
@@ -37,7 +90,11 @@ outputs/
 *.gpkg
 *.geojson
 
-# Temp files
-*.tmp
-*~
-.positai
+# ---------------------------------------------------------------------
+# (Opcional) versionar metadados FAIR da camada gold
+#   O git NÃO consegue desfazer o ignore de um arquivo se o diretório-pai
+#   inteiro está ignorado. Então, para rastrear data/metadata/, troque a
+#   linha 'data/' acima por 'data/*' e descomente:
+# !data/metadata/
+# !data/metadata/**
+# ---------------------------------------------------------------------
