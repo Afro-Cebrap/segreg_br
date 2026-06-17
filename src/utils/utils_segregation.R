@@ -18,7 +18,9 @@ prepare_data <- function(state_br, tracts_br, year) {
       code_tract = code_tract,
       branca = pessoa03_V002,
       preta  = pessoa03_V003,
-      parda  = pessoa03_V005
+      amarela  = pessoa03_V004,
+      parda  = pessoa03_V005,
+      indigena = pessoa03_V006
     ) %>%
     mutate(
       across(where(is.numeric), ~coalesce(.x, 0)),
@@ -47,6 +49,8 @@ prepare_data <- function(state_br, tracts_br, year) {
       branca_total = sum(branca),
       preta_total  = sum(preta),
       parda_total  = sum(parda),
+      amarela_total  = sum(amarela),
+      indigena_total = sum(indigena)
     ) %>%
     mutate(
       tm_branca = branca_total / unit_total,
@@ -220,9 +224,19 @@ calculate_global_h <- function(local_h) {
 add_percent_cols <- function(df) {
   df %>%
     mutate(
-      percent_branca         = branca_total   / unit_total,
-      percent_preta          = preta_total    / unit_total,
-      percent_parda          = parda_total    / unit_total,
-      percent_preta_ou_parda = (preta_total + parda_total) / unit_total
+      n_branca = branca_total,
+      n_preta_ou_parda = preta_total + parda_total,
+      n_preta = preta_total,
+      n_amarela = amarela_total,
+      n_parda = parda_total,
+      n_indigena = indigena_total,
+      n_total = unit_total,
+      percent_branca = branca_total / unit_total,
+      percent_preta_ou_parda = (preta_total + parda_total) / unit_total,
+      percent_preta = preta_total / unit_total,
+      percent_amarela = n_amarela  / n_total,
+      percent_parda = parda_total / unit_total,
+      percent_indigena = n_indigena / n_total
+      
     )
 }

@@ -81,7 +81,8 @@ for(st in lista_estados) {
     local_index_h = local_index_h,
     global_index_h = global_index_h,
     percent_summary = tracts_segreg %>%
-      distinct(unit_id, unit_total, branca_total, preta_total, parda_total)
+      distinct(unit_id, unit_total, branca_total, preta_total,
+               amarela_total, parda_total, indigena_total)
   )
   
   message("--- Process completed: ", st, " ---")
@@ -219,7 +220,7 @@ sf_segregation_indices <- bind_rows(sf_tracts, sf_totals_muni, sf_totals_rm)
 #Adds population proportion columns by racial group.
 percent_summary <- bind_rows(map(all_results, "percent_summary")) %>%
   add_percent_cols() %>%
-  select(unit_id, starts_with("percent_"))
+  select(unit_id, starts_with("n_"), starts_with("percent_"))
 
 #Split by level
 percent_rm <- percent_summary %>%
@@ -230,12 +231,14 @@ percent_muni <- percent_summary %>%
   filter(str_detect(unit_id, "^\\d+$")) %>%
   rename(code_muni = unit_id)
 
+joined_cols <- c(names(percent_rm)[names(percent_rm) != "name_metro"])
+
 sf_segregation_indices <- sf_segregation_indices %>%
   left_join(percent_rm,   by = "name_metro") %>%
   left_join(percent_muni, by = "code_muni",
             suffix = c("", ".muni")) %>%
   mutate(
-    across(starts_with("percent_") & !ends_with(".muni"),
+    across(all_of(joined_cols),
            ~ coalesce(.x, get(paste0(cur_column(), ".muni"))))
   ) %>%
   select(-ends_with(".muni"))
