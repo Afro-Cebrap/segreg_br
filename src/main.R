@@ -28,7 +28,7 @@ renv::restore(prompt = FALSE)
 
 # --- 1. Pipeline definition (order matters) -------------------------
 steps <- c(
-  setup      =  here::here("src", "utils", "setupr.R")# verify packages + create directories
+  setup      =  here::here("src", "utils", "setup.R"),# verify packages + create directories
   geo        = here::here("src", "01_geo_br.R"),              # geobr   -> data/2_silver
   population = here::here("src", "02_population.R"),           # censobr -> data/1_bronze
   indices    = here::here("src", "03_mvp_segregation_indices.R")  # indices -> data/3_gold
