@@ -18,15 +18,18 @@ prepare_data <- function(state_br, tracts_br, year) {
       code_tract = code_tract,
       branca = pessoa03_V002,
       preta  = pessoa03_V003,
-      parda  = pessoa03_V005
+      amarela  = pessoa03_V004,
+      parda  = pessoa03_V005,
+      indigena = pessoa03_V006
     ) %>%
     mutate(
       across(where(is.numeric), ~coalesce(.x, 0)),
       code_muni = as.character(code_muni),
       code_tract = as.character(code_tract),
-      tract_total = branca + preta + parda 
+      tract_total = branca + preta + parda,
+      pop_total   = branca + preta + parda + amarela + indigena # full population
     ) %>%
-    filter(tract_total > 0)
+    filter(pop_total > 0) # keep every inhabited tract, not only those with B/P/Pa
   
   metro_state <- read_metro_area(year) %>%
     st_drop_geometry() %>%
@@ -46,7 +49,9 @@ prepare_data <- function(state_br, tracts_br, year) {
       unit_total = sum(tract_total),
       branca_total = sum(branca),
       preta_total  = sum(preta),
-      parda_total  = sum(parda)
+      parda_total  = sum(parda),
+      amarela_total  = sum(amarela),
+      indigena_total = sum(indigena)
     ) %>%
     mutate(
       tm_branca = branca_total / unit_total,
@@ -216,13 +221,43 @@ calculate_global_h <- function(local_h) {
   return(global_results)
 }
 
-# Adds population proportion columns by racial group
+# Adds population proportion columns by racial group at the city/RM level
 add_percent_cols <- function(df) {
   df %>%
     mutate(
-      percent_branca         = branca_total   / unit_total,
-      percent_preta          = preta_total    / unit_total,
-      percent_parda          = parda_total    / unit_total,
-      percent_preta_ou_parda = (preta_total + parda_total) / unit_total
+      n_branca = branca_total,
+      n_preta_ou_parda = preta_total + parda_total,
+      n_preta = preta_total,
+      n_amarela = amarela_total,
+      n_parda = parda_total,
+      n_indigena = indigena_total,
+      n_total = branca_total + preta_total + parda_total + amarela_total + indigena_total,
+      percent_branca = branca_total / unit_total,
+      percent_preta_ou_parda = (preta_total + parda_total) / unit_total,
+      percent_preta = preta_total / unit_total,
+      percent_amarela = n_amarela  / n_total,
+      percent_parda = parda_total / unit_total,
+      percent_indigena = n_indigena / n_total
+      
+    )
+}
+
+# Adds population proportion columns by racial group at the tract level
+add_percent_cols_tract <- function(df) {
+  df %>%
+    mutate(
+      n_branca         = branca,
+      n_preta          = preta,
+      n_parda          = parda,
+      n_amarela        = amarela,
+      n_indigena       = indigena,
+      n_preta_ou_parda = preta + parda,
+      n_total = branca + preta + parda + amarela + indigena,
+      percent_branca         = branca / tract_total,
+      percent_preta          = preta  / tract_total,
+      percent_parda          = parda  / tract_total,
+      percent_amarela        = amarela  / tract_total,
+      percent_indigena       = indigena / tract_total,
+      percent_preta_ou_parda = (preta + parda) / tract_total
     )
 }
