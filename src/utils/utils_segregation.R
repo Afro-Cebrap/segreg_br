@@ -34,7 +34,8 @@ prepare_data <- function(state_br, tracts_br, year) {
   metro_state <- read_metro_area(year) %>%
     st_drop_geometry() %>%
     filter(abbrev_state == state_br) %>%
-    filter(!str_detect(name_metro, "RIDE")) %>% 
+    # drop RIDE areas
+    filter(!str_detect(name_metro, regex("\\bride\\b", ignore_case = TRUE))) %>%
     select(code_muni, name_metro) %>%
     mutate(code_muni = as.character(code_muni))
   

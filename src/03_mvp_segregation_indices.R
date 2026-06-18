@@ -173,7 +173,9 @@ segregation_indices <- bind_rows(
     filter(!is.na(name_metro) & code_tract != "Total") %>%
     select(-c(code_muni)) %>%
     left_join(
-      sf_geo_br %>% st_drop_geometry() %>% select(code_muni, code_tract),
+      sf_geo_br %>% st_drop_geometry() %>%
+        filter(code_tract != "Total") %>%
+        distinct(code_muni, code_tract),
       by = "code_tract"
     ) %>%
     select(name_metro, code_muni, code_tract, everything()),
