@@ -20,12 +20,15 @@ lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "
 
 # Get geo data for municipalities in metropolitan areas (geometry by municipality)
 sf_muni_metro_br <- geobr::read_metro_area(year = year, cache = TRUE) %>%
-  mutate(code_muni = as.character(code_muni))%>%
+  mutate(code_muni = as.character(code_muni)) %>% 
   # geobr names these "Ride ..." (not "RIDE"), so a case-sensitive "RIDE"
   # match never fires and every RIDE leaks through. RIDEs span >1 state and
   # would be aggregated once per state -> duplicate, partial rows. Match
-  # case-insensitively on the word "ride".
-  filter(!str_detect(name_metro, regex("\\bride\\b", ignore_case = TRUE)))
+  # case-insensitively on the word "ride" and "raide".
+  filter(
+    !str_detect(name_metro, regex("\\bride\\b", ignore_case = TRUE)),
+    !str_detect(type, regex("^(raide|ride)", ignore_case = TRUE))
+  )
 
 # Spatial key for metropolitan areas
 sf_key_metro_br <- sf_muni_metro_br %>%
@@ -99,7 +102,11 @@ sf_geo_br <- bind_rows(
   sf_tracts_br,
   sf_muni_br,
   sf_metro_br
-) 
+) %>% 
+  # For 2022, adapt the format of name_metro to the same as in 2010
+  mutate(
+    name_metro = str_replace(name_metro, "^Recorte Metropolitano d[eoa]\\s+", "RM ")
+  )
 
 # Export ------------------------------------------------------------------
 
@@ -116,6 +123,4 @@ sfarrow::st_write_parquet(
   here(
     "data", "2_silver", "geo_br_2022.parquet")
 )
-
-
 
