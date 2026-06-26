@@ -9,48 +9,30 @@ library(censobr) # For accessing Brazilian census data
 library(tidyverse) # For data manipulation and visualization
 library(tidylog) # For logging tidyverse operations
 library(arrow) # For reading and writing data in Parquet format
-library(sidrar) # For reading data from SIDRA IBGE
+
+## Parameters
+year <- 2022
+
 
 # 1. Population data ------------------------------------------------------
 
-# Importing data at municipal unity from SIDRA
-# obs.: this API was generated based on the table creator in the SIDRA website
+# Get tracts data for the specified year and dataset
+census_tracts_br <- censobr::read_tracts(year, dataset = "Pessoas", as_data_frame = TRUE, cache = TRUE)
 
-census_munic_br <- sidrar::get_sidra(api = "/t/9606/n6/all/v/allxp/p/last%201/c86/allxt/c2/6794/c287/100362")
+# 2. Export ---------------------------------------------------------------
 
-# 2. Data handling --------------------------------------------------------
+# census_tracts_br is an untouched read_*() pull from censobr -> BRONZE tier.
+# Create the exact target subdirectory before writing so a clean clone does not
+# fail if 01 has not run yet.
+if (!dir.exists(here("data", "1_bronze"))) {
+  dir.create(here("data", "1_bronze"), recursive = TRUE)
+}
 
-# selecting variables of interest
-census_munic_br <- census_munic_br |> 
-  select(c(6,12,5))
-
-# renaming them
-
-colnames(census_munic_br) <- c("code_munic","race","n")
-
-# get dataset as similar as dataset for 2010
-
-census_munic_br <- census_munic_br |> 
-  mutate(
-    race = case_when(
-      race == 2776 ~ "pessoa03_V002",
-      race == 2777 ~ "pessoa03_V003",
-      race == 2778 ~ "pessoa03_V004",
-      race == 2779 ~ "pessoa03_V005",
-      race == 2780 ~ "pessoa03_V006"
-    )
-  ) |> 
-  pivot_wider(
-    names_from = "race",
-    values_from = "n"
-  )
-
-
-# 3. Export ---------------------------------------------------------------
-
-# Export the census tracts data to a Parquet file
+# Export the census tracts data to a Parquet file (bronze)
 arrow::write_parquet(
-  census_munic_br,
+  census_tracts_br,
   here(
-    "data", "1_raw", "census_munic_br_2022.parquet")
+    "data", "1_bronze", "census_tracts_br_2022.parquet")
 )
+
+
