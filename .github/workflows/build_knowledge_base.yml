@@ -1,0 +1,84 @@
+name: Build Gui do Bosque Knowledge Base 🌳📚
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'   # toda segunda, 06:00 UTC
+
+# Least-privilege: checkout, commit e abertura de PR usam o token do GitHub App
+# (steps.app-token), cujas permissões ficam no nível do App. O GITHUB_TOKEN só
+# precisa do OIDC para o Workload Identity Federation.
+permissions:
+  id-token: write
+  contents: read
+
+# Os runs escrevem na mesma branch (chore/gui-do-bosque-kb); evitamos sobreposição
+# entre um disparo manual e o agendado. NÃO cancelamos o run em andamento para não
+# interromper um upload da biblioteca crua no GCS pela metade — o novo run espera.
+concurrency:
+  group: build-knowledge-base
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GUI_BOT_APP_ID }}
+          private-key: ${{ secrets.GUI_BOT_PRIVATE_KEY }}
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade google-api-python-client google-auth "google-genai>=1.51.0" google-cloud-storage pypdf
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/620861699805/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'gui-do-bosque@mapa-da-segregacao.iam.gserviceaccount.com'
+
+      - name: Build knowledge base
+        env:
+          GOOGLE_CLOUD_PROJECT: 'mapa-da-segregacao'
+          GOOGLE_CLOUD_LOCATION: 'global'
+          GEMINI_MODEL: 'gemini-3.1-pro-preview'
+          KB_BUCKET: 'gui-do-bosque-kb'
+        run: |
+          python config/build_knowledge_base.py
+
+      - name: Upload digest as artifact (revisão no teste)
+        if: hashFiles('config/guidelines_cache.md') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: guidelines_cache
+          path: config/guidelines_cache.md
+
+      - name: Open PR with updated knowledge base
+        if: hashFiles('config/guidelines_cache.md') != ''
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          add-paths: config/guidelines_cache.md
+          branch: chore/gui-do-bosque-kb
+          delete-branch: true
+          commit-message: "chore: atualiza base de conhecimento do Gui do Bosque 🌳📚"
+          title: "chore: atualiza base de conhecimento do Gui do Bosque 🌳📚"
+          body: |
+            Atualização automática da base de conhecimento destilada
+            (`config/guidelines_cache.md`), gerada a partir do Drive.
+
+            **Revise o digest antes de mesclar.** (A biblioteca crua vai para o GCS privado.)

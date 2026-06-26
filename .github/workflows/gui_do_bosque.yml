@@ -1,0 +1,82 @@
+name: Gui do Bosque Code Reviewer 🌳
+
+on:
+  workflow_dispatch:  # Permite clicar em "Run workflow" manualmente
+  pull_request:
+    types: [opened, synchronize, review_requested]
+    branches: [ feature/teste-avatar-gui, main, master ]
+
+# Least-privilege: o comentário no PR é postado com o token do GitHub App
+# (não com o GITHUB_TOKEN), então o GITHUB_TOKEN só precisa de leitura + OIDC.
+permissions:
+  id-token: write   # Essencial para o Workload Identity Federation (WIF)
+  contents: read    # Para o checkout do código
+
+# Evita reviews duplicados: a cada novo push no mesmo PR, cancela o run anterior
+# que ainda estiver em andamento (o time continua "pending" como reviewer, então
+# 'synchronize' redispararia o bot a cada commit sem isto).
+concurrency:
+  group: gui-do-bosque-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: |
+      github.event.requested_team.slug == 'gui-do-bosque' ||
+      contains(github.event.pull_request.requested_teams.*.slug, 'gui-do-bosque')
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # histórico completo para o 'git diff base..head' funcionar
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        # O reviewer usa só o google-genai (Vertex AI). As libs de Drive/GCS
+        # pertencem ao build_knowledge_base.py, não a este passo.
+        run: |
+          pip install --upgrade "google-genai>=1.51.0" google-auth
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/620861699805/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'gui-do-bosque@mapa-da-segregacao.iam.gserviceaccount.com'
+
+      - name: Run Gui do Bosque Reviewer
+        env:
+          GOOGLE_CLOUD_PROJECT: 'mapa-da-segregacao'
+          GOOGLE_CLOUD_LOCATION: 'global'
+          GEMINI_MODEL: 'gemini-3.1-pro-preview'
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY:  ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python config/gui_bot_script.py
+
+      - name: Generate GitHub App Token
+        id: generate-token
+        if: github.event_name == 'pull_request'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GUI_BOT_APP_ID }}
+          private-key: ${{ secrets.GUI_BOT_PRIVATE_KEY }}
+
+      - name: Post Comment on PR
+        if: hashFiles('review_output.md') != ''
+        uses: mshick/add-pr-comment@v2
+        with:
+          repo-token: ${{ steps.generate-token.outputs.token }}
+          message-path: review_output.md
+
+      - name: Print Review to Logs
+        if: hashFiles('review_output.md') != ''
+        run: cat review_output.md

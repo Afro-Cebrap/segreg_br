@@ -21,11 +21,18 @@ census_tracts_br <- censobr::read_tracts(year, dataset = "Pessoa", as_data_frame
 
 # 2. Export ---------------------------------------------------------------
 
-# Export the census tracts data to a Parquet file
+# census_tracts_br is an untouched read_*() pull from censobr -> BRONZE tier.
+# Create the exact target subdirectory before writing so a clean clone does not
+# fail if 01 has not run yet.
+if (!dir.exists(here("data", "1_bronze"))) {
+  dir.create(here("data", "1_bronze"), recursive = TRUE)
+}
+
+# Export the census tracts data to a Parquet file (bronze)
 arrow::write_parquet(
   census_tracts_br,
   here(
-    "data", "1_raw", "census_tracts_br.parquet")
+    "data", "1_bronze", "census_tracts_br.parquet")
 )
 
 
