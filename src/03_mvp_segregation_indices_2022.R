@@ -262,14 +262,14 @@ map2(
   names(list_segregation_indices),
   ~ arrow::write_parquet(
     .x,
-    here::here("data", "3_gold", paste0(.y, ".parquet"))
+    here::here("data", "3_gold", paste0(.y, "_2022.parquet"))
   )
 )
 
 # export the integrated data frame with all indices as a single parquet file
 sfarrow::st_write_parquet(
   sf_segregation_indices,
-  here::here("data", "3_gold", "sf_segregation_indices.parquet")
+  here::here("data", "3_gold", "sf_segregation_indices_2022.parquet")
 )
 
 # 4. Check ----------------------------------------------------------------
