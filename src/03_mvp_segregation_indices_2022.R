@@ -278,12 +278,12 @@ sfarrow::st_write_parquet(
 # For durable, shareable figures, prefer a notebook under reports/.
 if (interactive()) {
 sf_segregation_indices %>%
-  filter(name_metro == "Recorte Metropolitano de Belo Horizonte")
+  filter(name_metro == "RM Belo Horizonte")
 
 # Static map with ggplot2
 ggplot() +
   geom_sf(
-    data = sf_segregation_indices %>% filter(name_metro == "Recorte Metropolitano de Belo Horizonte" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
     aes(fill = dissimilarity)
   ) +
   scale_fill_viridis_c() +
@@ -296,7 +296,7 @@ ggplot() +
 # Static map with ggplot2 - RM Rio de Janeiro
 ggplot() +
   geom_sf(
-    data = sf_segregation_indices %>% filter(name_metro == "Recorte Metropolitano do Rio de Janeiro" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "RM Rio de Janeiro" & code_tract != "Total"),
     aes(fill = dissimilarity)
   ) +
   scale_fill_viridis_c() +
@@ -323,7 +323,7 @@ ggplot() +
 leaflet() %>%
   addTiles() %>%
   addPolygons(
-    data = sf_segregation_indices %>% filter(name_metro == "Recorte Metropolitano de Belo Horizonte" & code_tract != "Total"),
+    data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
     fillColor = ~colorNumeric("viridis", dissimilarity)(dissimilarity),
     fillOpacity = 0.7,
     color = "white",
