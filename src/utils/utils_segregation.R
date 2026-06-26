@@ -53,9 +53,20 @@ prepare_data <- function(state_br, tracts_br, year) {
     st_drop_geometry() %>%
     filter(abbrev_state == state_br) %>%
     # drop RIDE areas
-    filter(!str_detect(name_metro, regex("\\bride\\b", ignore_case = TRUE))) %>%
+    filter(
+      !str_detect(name_metro, regex("\\bride\\b", ignore_case = TRUE)),
+      !str_detect(type, regex("^(raide|ride)", ignore_case = TRUE))
+    ) %>% 
     select(code_muni, name_metro) %>%
     mutate(code_muni = as.character(code_muni))
+  
+  # harmonizing RM names for 2022
+  if(year == 2022){
+    metro_state <- metro_state %>% 
+      mutate(
+        name_metro = str_replace(name_metro, "^Recorte Metropolitano d[eoa]\\s+", "RM ")
+      )
+  }
   
   tracts_state <- tracts_state %>%
     left_join(metro_state, by = "code_muni") %>%
