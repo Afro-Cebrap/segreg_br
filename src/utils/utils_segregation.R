@@ -69,12 +69,19 @@ prepare_data <- function(state_br, tracts_br, year) {
   }
   
   tracts_state <- tracts_state %>%
-    left_join(metro_state, by = "code_muni") %>%
-    mutate(unit_id = if_else(!is.na(name_metro), name_metro, code_muni))
+    left_join(metro_state, by = "code_muni")
+
+  tracts_all <- bind_rows(
+    tracts_state %>%
+      mutate(unit_id = code_muni, unit_type = "muni"),
+    tracts_state %>%
+      filter(!is.na(name_metro)) %>%
+      mutate(unit_id = name_metro, unit_type = "metro")
+  )
   
   #Tm (Cidade/RM Level)
-  tm_df <- tracts_state %>%
-    group_by(unit_id) %>%
+  tm_df <- tracts_all %>%
+    group_by(unit_id, unit_type) %>%
     summarise(
       unit_total = sum(tract_total),
       branca_total = sum(branca),
@@ -90,13 +97,13 @@ prepare_data <- function(state_br, tracts_br, year) {
     )
   
   #Tjm tract level
-  tracts_segreg <- tracts_state %>%
+  tracts_segreg <- tracts_all %>%
     mutate(
       tjm_branca = branca / tract_total,
       tjm_preta  = preta  / tract_total,
       tjm_parda  = parda  / tract_total
     ) %>%
-    left_join(tm_df, by = "unit_id")
+    left_join(tm_df, by = c("unit_id", "unit_type"))
   
   return(tracts_segreg)
 }
@@ -122,6 +129,7 @@ calculate_local_dissimilarity <- function(tracts_segreg) {
     )%>%
     select(
       unit_id, 
+      unit_type,
       code_tract, 
       dissimilarity = tract_contrib
     )
@@ -130,12 +138,13 @@ calculate_local_dissimilarity <- function(tracts_segreg) {
 
 calculate_global_dissimilarity <- function(local_diss) {
   global_results <- local_diss %>%
-    group_by(unit_id) %>%
+    group_by(unit_id, unit_type) %>%
     summarise(
       dissimilarity = sum(dissimilarity, na.rm = TRUE),
     )%>%
     select(
       unit_id, 
+      unit_type,
       dissimilarity
     )
   return(global_results)
@@ -161,6 +170,7 @@ calculate_local_exposure <- function(tracts_segreg) {
     mutate(across(starts_with(c("iso_", "exp_")), ~coalesce(., 0))) %>%
     select(
       unit_id, 
+      unit_type,
       code_tract, 
       starts_with("exp_"), 
       starts_with("iso_")
@@ -186,6 +196,7 @@ calculate_local_exposure_agregate <- function(tracts_segreg) {
     mutate(across(starts_with(c("iso_", "exp_")), ~coalesce(., 0))) %>%
     select(
       unit_id, 
+      unit_type,
       code_tract, 
       iso_branca_branca, exp_branca_pp,
       exp_pp_branca, iso_pp_pp
@@ -196,7 +207,7 @@ calculate_local_exposure_agregate <- function(tracts_segreg) {
 
 calculate_global_exposure <- function(local_exposure) {
   global_results <- local_exposure %>%
-    group_by(unit_id) %>%
+    group_by(unit_id, unit_type) %>%
     summarise(
       across(starts_with(c("exp_", "iso_")), ~sum(., na.rm = TRUE)),
     )
@@ -231,6 +242,7 @@ calculate_local_h <- function(tracts_segreg) {
     mutate(index_h = coalesce(index_h, 0)) %>%
     select(
       unit_id,
+      unit_type,
       code_tract,
       local_entropy,
       global_entropy,
@@ -242,7 +254,7 @@ calculate_local_h <- function(tracts_segreg) {
 
 calculate_global_h <- function(local_h) {
   global_results <- local_h %>%
-    group_by(unit_id) %>%
+    group_by(unit_id, unit_type) %>%
     summarise(
       global_entropy = first(global_entropy),
       index_h  = sum(index_h)

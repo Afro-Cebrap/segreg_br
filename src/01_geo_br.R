@@ -37,7 +37,7 @@ sf_key_metro_br <- sf_muni_metro_br %>%
   # to integrate with the population data and geometry of the tracts
   group_by(name_metro) %>%
   summarise(
-    geom = st_union(geometry)
+    geometry = st_union(geometry)
   ) %>%
   ungroup()
 
