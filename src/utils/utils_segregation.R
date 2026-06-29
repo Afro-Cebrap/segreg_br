@@ -11,17 +11,35 @@ prepare_data <- function(state_br, tracts_br, year) {
     select(code_muni) %>%
     mutate(code_muni = as.character(code_muni))
   
-  tracts_state <- tracts_br %>%
-    filter(code_muni %in% muni_state$code_muni) %>%
-    select(
-      code_muni = code_muni,
-      code_tract = code_tract,
-      branca = pessoa03_V002,
-      preta  = pessoa03_V003,
-      amarela  = pessoa03_V004,
-      parda  = pessoa03_V005,
-      indigena = pessoa03_V006
-    ) %>%
+  # choosing variables based on var_name in each year
+  if(year == 2010){
+    tracts_state <- tracts_br %>%
+      filter(code_muni %in% muni_state$code_muni) %>%
+      select(
+        code_muni = code_muni,
+        code_tract = code_tract,
+        branca = pessoa03_V002,
+        preta  = pessoa03_V003,
+        amarela  = pessoa03_V004,
+        parda  = pessoa03_V005,
+        indigena = pessoa03_V006
+      )
+  }
+  if(year == 2022){
+    tracts_state <- tracts_br %>%
+      filter(code_muni %in% muni_state$code_muni) %>%
+      select(
+        code_muni = code_muni,
+        code_tract = code_tract,
+        branca = raca_V01317,
+        preta  = raca_V01318,
+        amarela  = raca_V01319,
+        parda  = raca_V01320,
+        indigena = raca_V01321
+      )
+  }
+  
+  tracts_state <- tracts_state %>%
     mutate(
       across(where(is.numeric), ~coalesce(.x, 0)),
       code_muni = as.character(code_muni),
@@ -35,9 +53,20 @@ prepare_data <- function(state_br, tracts_br, year) {
     st_drop_geometry() %>%
     filter(abbrev_state == state_br) %>%
     # drop RIDE areas
-    filter(!str_detect(name_metro, regex("\\bride\\b", ignore_case = TRUE))) %>%
+    filter(
+      !str_detect(name_metro, regex("\\bride\\b", ignore_case = TRUE)),
+      !str_detect(type, regex("^(raide|ride)", ignore_case = TRUE))
+    ) %>% 
     select(code_muni, name_metro) %>%
     mutate(code_muni = as.character(code_muni))
+  
+  # harmonizing RM names for 2022
+  if(year == 2022){
+    metro_state <- metro_state %>% 
+      mutate(
+        name_metro = str_replace(name_metro, "^Recorte Metropolitano d[eoa]\\s+", "RM ")
+      )
+  }
   
   tracts_state <- tracts_state %>%
     left_join(metro_state, by = "code_muni") %>%

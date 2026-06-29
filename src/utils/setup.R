@@ -19,7 +19,7 @@ renv::restore()
 
 # 4. Verify key packages are installed
 cat("\nVerifying critical packages...\n")
-critical_packages <- c("here", "fs", "sf", "tidyverse", "geobr", "censobr", "arrow", "sfarrow", "tidylog", "leaflet")
+critical_packages <- c("here", "fs", "sf", "tidyverse", "geobr", "censobr", "arrow", "sfarrow", "tidylog", "leaflet","sidrar")
 missing <- !sapply(critical_packages, function(pkg) {
   requireNamespace(pkg, quietly = TRUE)
 })
