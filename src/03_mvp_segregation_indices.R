@@ -83,7 +83,7 @@ for(st in lista_estados) {
     local_index_h = local_index_h,
     global_index_h = global_index_h,
     percent_summary = tracts_segreg %>%
-      distinct(unit_id, unit_total, branca_total, preta_total,
+      distinct(unit_id, unit_type, unit_total, branca_total, preta_total,
                amarela_total, parda_total, indigena_total),
     percent_summary_tract = tracts_segreg %>%
       distinct(code_tract, branca, preta, parda, amarela, indigena, tract_total)
@@ -120,72 +120,63 @@ list_segregation_indices_local <- list(
 segregation_indices_global <- # list of estimated indices to apply join function
   list_segregation_indices_global %>%
   # apply full_join sequentially to integrate all indices into a single data frame
-  reduce(full_join) %>%
+  reduce(full_join, by = c("unit_id", "unit_type", "code_tract"))  %>%
   # adjust columns
   select(-c(global_entropy)) %>%
   # reposition columns
-  select(unit_id, code_tract, everything()) %>%
-  rename(
-    code_muni = unit_id
-  )
+  select(unit_id, unit_type, code_tract, everything())
 
 segregation_indices_local <- # list of estimated indices to apply join function
   list_segregation_indices_local %>%
   # apply full_join sequentially to integrate all indices into a single data frame
-  reduce(full_join) %>%
+  reduce(full_join, by = c("unit_id", "unit_type", "code_tract"))  %>%
   # adjust columns
   select(-c(local_entropy)) %>%
   # reposition columns
-  select(unit_id, code_tract, everything()) %>%
-  rename(
-    code_muni = unit_id
-  )
+  select(unit_id, unit_type, code_tract, everything())
 
 #
-segregation_indices_raw <- full_join(
+segregation_indices_raw <- bind_rows(
   segregation_indices_global,
   segregation_indices_local
 ) %>%
   # adjust columns
   mutate(
-    # if code_muni is not numeric, then that is a metro area named as the name_muni
-    name_metro = if_else(!str_detect(code_muni, "^\\d+$"), code_muni, NA_character_),
-    # if code_muni is not numeric and code tract is "Total", then that is total not for a municipality, but a metro area 
-    # if_code_muni is numeric and code tract is "Total", then that is total for a municipality
+    # unit_type = "metro" means unit_id is a RM name; "muni" means it is a code_muni
+    name_metro = if_else(unit_type == "metro", unit_id, NA_character_),
+    # totals of RM keep code_muni = "Total" to preserve backwards compatibility
     code_muni = case_when(
-      !str_detect(code_muni, "^\\d+$") & code_tract == "Total" ~ "Total", 
-      !str_detect(code_muni, "^\\d+$") ~ NA_character_,
-      TRUE ~ code_muni)
+      unit_type == "metro" & code_tract == "Total" ~ "Total",
+      unit_type == "metro" ~ NA_character_,
+      TRUE ~ unit_id)
   ) %>%
   select(
-    name_metro, everything()
+    name_metro, code_muni, unit_type, code_tract, everything(), -unit_id
   )
 
 
 segregation_indices <- bind_rows(
-  # tracts outside RM
+  # tracts outside RM (only have unit_type = "muni")
   segregation_indices_raw %>%
-    filter(is.na(name_metro)) %>%
-    select(-name_metro),
+    filter(is.na(name_metro) & code_tract != "Total"),
   
-  # tracts inside RM
+  # tracts inside RM (unit_type = "muni" and "metro")
   segregation_indices_raw %>%
     filter(!is.na(name_metro) & code_tract != "Total") %>%
-    select(-c(code_muni)) %>%
     left_join(
       sf_geo_br %>% st_drop_geometry() %>%
         filter(code_tract != "Total") %>%
         distinct(code_muni, code_tract),
       by = "code_tract"
     ) %>%
-    select(name_metro, code_muni, code_tract, everything()),
+    mutate(code_muni = coalesce(code_muni.y, code_muni.x)) %>%
+    select(-code_muni.x, -code_muni.y),
   
   # totals per municipality or RM
   segregation_indices_raw %>%
-    filter(code_muni == "Total")
+    filter(code_tract == "Total")
 ) %>%
-  select(name_metro, everything())
-
+  select(name_metro, code_muni, unit_type, code_tract, everything())
 
 
 # join for census tracts (tract level)
@@ -194,29 +185,30 @@ sf_tracts <- sf_geo_br %>%
   left_join(
     segregation_indices %>% 
       filter(code_tract != "Total") %>%
-      select(code_tract, dissimilarity, index_h, exp_branca_pp, 
+      select(code_tract, unit_type, dissimilarity, index_h, exp_branca_pp, 
              exp_pp_branca, iso_branca_branca, iso_pp_pp),
-    by = "code_tract"
+    by = "code_tract",
+    relationship = "one-to-many"  # tracts inside RM have 2 index rows (muni + metro)
   )
 
 # totals per municipality
 sf_totals_muni <- sf_geo_br %>%
-  filter(code_tract == "Total" & is.na(name_metro)) %>%
+  filter(code_tract == "Total" & code_muni != "Total") %>%
   left_join(
     segregation_indices %>%
-      filter(code_tract == "Total" & is.na(name_metro)) %>%
-      select(code_muni, code_tract, dissimilarity, index_h,
+      filter(code_tract == "Total" & unit_type == "muni") %>%
+      select(code_muni, unit_type, code_tract, dissimilarity, index_h,
              exp_branca_pp, exp_pp_branca, iso_branca_branca, iso_pp_pp),
     by = c("code_muni", "code_tract")
   )
 
 # totals per RMs
 sf_totals_rm <- sf_geo_br %>%
-  filter(code_tract == "Total" & !is.na(name_metro)) %>%
+  filter(code_tract == "Total" & code_muni == "Total") %>%
   left_join(
     segregation_indices %>%
-      filter(code_muni == "Total") %>%
-      select(name_metro, code_tract, dissimilarity, index_h,
+      filter(code_tract == "Total" & unit_type == "metro") %>%
+      select(name_metro, unit_type, code_tract, dissimilarity, index_h,
              exp_branca_pp, exp_pp_branca, iso_branca_branca, iso_pp_pp),
     by = c("name_metro", "code_tract")
   )
@@ -229,16 +221,18 @@ percent_tract <- bind_rows(map(all_results, "percent_summary_tract")) %>%
 #Adds population proportion columns by racial group at the municipality/RM level
 percent_summary <- bind_rows(map(all_results, "percent_summary")) %>%
   add_percent_cols() %>%
-  select(unit_id, starts_with("n_"), starts_with("percent_"))
+  select(unit_id, unit_type, starts_with("n_"), starts_with("percent_"))
 
 #Split by level
 percent_rm <- percent_summary %>%
-  filter(!str_detect(unit_id, "^\\d+$")) %>%
-  rename(name_metro = unit_id)
+  filter(unit_type == "metro") %>%
+  rename(name_metro = unit_id) %>%
+  select(-unit_type)
 
 percent_muni <- percent_summary %>%
-  filter(str_detect(unit_id, "^\\d+$")) %>%
-  rename(code_muni = unit_id)
+  filter(unit_type == "muni") %>%
+  rename(code_muni = unit_id) %>%
+  select(-unit_type)
 
 sf_segregation_indices <- bind_rows(
   sf_tracts      %>% left_join(percent_tract, by = "code_tract"),
