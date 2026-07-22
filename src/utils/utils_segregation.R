@@ -70,7 +70,7 @@ prepare_data <- function(state_br, tracts_br, year) {
   
   tracts_state <- tracts_state %>%
     left_join(metro_state, by = "code_muni")
-
+  
   tracts_all <- bind_rows(
     tracts_state %>%
       mutate(unit_id = code_muni, unit_type = "muni"),
@@ -94,7 +94,8 @@ prepare_data <- function(state_br, tracts_br, year) {
       tm_branca = branca_total / unit_total,
       tm_preta  = preta_total  / unit_total,
       tm_parda  = parda_total  / unit_total
-    )
+    ) |> 
+    ungroup()
   
   #Tjm tract level
   tracts_segreg <- tracts_all %>%
@@ -146,7 +147,8 @@ calculate_global_dissimilarity <- function(local_diss) {
       unit_id, 
       unit_type,
       dissimilarity
-    )
+    ) |> 
+    ungroup()
   return(global_results)
 }
 
@@ -210,7 +212,8 @@ calculate_global_exposure <- function(local_exposure) {
     group_by(unit_id, unit_type) %>%
     summarise(
       across(starts_with(c("exp_", "iso_")), ~sum(., na.rm = TRUE)),
-    )
+    ) |> 
+    ungroup()
   
   return(global_results)
 }
@@ -258,7 +261,8 @@ calculate_global_h <- function(local_h) {
     summarise(
       global_entropy = first(global_entropy),
       index_h  = sum(index_h)
-    )
+    ) |> 
+    ungroup()
   
   return(global_results)
 }
