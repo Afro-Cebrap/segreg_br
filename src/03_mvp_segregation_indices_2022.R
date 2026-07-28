@@ -152,7 +152,8 @@ segregation_indices_raw <- bind_rows(
   ) %>%
   select(
     name_metro, code_muni, unit_type, code_tract, everything(), -unit_id
-  )
+  ) |> 
+  distinct() # TCA comment - distinct() was added to deal with duplicate cases before
 
 
 segregation_indices <- bind_rows(
@@ -188,8 +189,9 @@ sf_tracts <- sf_geo_br %>%
       select(code_tract, unit_type, dissimilarity, index_h, exp_branca_pp, 
              exp_pp_branca, iso_branca_branca, iso_pp_pp),
     by = "code_tract",
-    relationship = "one-to-many"  # tracts inside RM have 2 index rows (muni + metro)
-  )
+    relationship = "many-to-many"  # tracts inside RM have 2 index rows (muni + metro)
+  ) |> 
+  distinct() # TCA comment - It was added to avoid dupliate values into the merge
 
 # totals per municipality
 sf_totals_muni <- sf_geo_br %>%
@@ -271,63 +273,63 @@ sfarrow::st_write_parquet(
 # pipeline run (Rscript / make) does not trigger view()/leaflet side effects.
 # For durable, shareable figures, prefer a notebook under reports/.
 if (interactive()) {
-sf_segregation_indices %>%
-  filter(name_metro == "RM Belo Horizonte")
-
-# Static map with ggplot2
-ggplot() +
-  geom_sf(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
-    aes(fill = dissimilarity)
-  ) +
-  scale_fill_viridis_c() +
-  theme_minimal() +
-  labs(
-    title = "Dissimilarity Index in RM Belo Horizonte (2010)",
-    fill = "Dissimilarity"
-  )
-
-# Static map with ggplot2 - RM Rio de Janeiro
-ggplot() +
-  geom_sf(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Rio de Janeiro" & code_tract != "Total"),
-    aes(fill = dissimilarity)
-  ) +
-  scale_fill_viridis_c() +
-  theme_minimal() +
-  labs(
-    title = "Dissimilarity Index in RM Rio de Janeiro (2010)",
-    fill = "Dissimilarity"
-  )
-
-# Static map with ggplot2 - Ribeirão das Neves (municipality in RM Belo Horizonte)
-ggplot() +
-  geom_sf(
-    data = sf_segregation_indices %>% filter(name_muni == "Ribeirão das Neves" & code_tract != "Total"),
-    aes(fill = dissimilarity)
-  ) +
-  scale_fill_viridis_c() +
-  theme_minimal() +
-  labs(
-    title = "Dissimilarity Index in Ribeirão das Neves (2010)",
-    fill = "Dissimilarity"
-  )
-
-# Responsive interactive map with leaflet - RM Belo Horizonte
-leaflet() %>%
-  addTiles() %>%
-  addPolygons(
-    data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
-    fillColor = ~colorNumeric("viridis", dissimilarity)(dissimilarity),
-    fillOpacity = 0.7,
-    color = "white",
-    weight = 1,
-    popup = ~paste0("Dissimilarity: ", round(dissimilarity, 2))
-  ) %>%
-  addLegend(
-    pal = colorNumeric("viridis", sf_segregation_indices$dissimilarity),
-    values = sf_segregation_indices$dissimilarity,
-    title = "Dissimilarity Index",
-    position = "bottomright"
-  )
+  sf_segregation_indices %>%
+    filter(name_metro == "RM Belo Horizonte")
+  
+  # Static map with ggplot2
+  ggplot() +
+    geom_sf(
+      data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
+      aes(fill = dissimilarity)
+    ) +
+    scale_fill_viridis_c() +
+    theme_minimal() +
+    labs(
+      title = "Dissimilarity Index in RM Belo Horizonte (2010)",
+      fill = "Dissimilarity"
+    )
+  
+  # Static map with ggplot2 - RM Rio de Janeiro
+  ggplot() +
+    geom_sf(
+      data = sf_segregation_indices %>% filter(name_metro == "RM Rio de Janeiro" & code_tract != "Total"),
+      aes(fill = dissimilarity)
+    ) +
+    scale_fill_viridis_c() +
+    theme_minimal() +
+    labs(
+      title = "Dissimilarity Index in RM Rio de Janeiro (2010)",
+      fill = "Dissimilarity"
+    )
+  
+  # Static map with ggplot2 - Ribeirão das Neves (municipality in RM Belo Horizonte)
+  ggplot() +
+    geom_sf(
+      data = sf_segregation_indices %>% filter(name_muni == "Ribeirão das Neves" & code_tract != "Total"),
+      aes(fill = dissimilarity)
+    ) +
+    scale_fill_viridis_c() +
+    theme_minimal() +
+    labs(
+      title = "Dissimilarity Index in Ribeirão das Neves (2010)",
+      fill = "Dissimilarity"
+    )
+  
+  # Responsive interactive map with leaflet - RM Belo Horizonte
+  leaflet() %>%
+    addTiles() %>%
+    addPolygons(
+      data = sf_segregation_indices %>% filter(name_metro == "RM Belo Horizonte" & code_tract != "Total"),
+      fillColor = ~colorNumeric("viridis", dissimilarity)(dissimilarity),
+      fillOpacity = 0.7,
+      color = "white",
+      weight = 1,
+      popup = ~paste0("Dissimilarity: ", round(dissimilarity, 2))
+    ) %>%
+    addLegend(
+      pal = colorNumeric("viridis", sf_segregation_indices$dissimilarity),
+      values = sf_segregation_indices$dissimilarity,
+      title = "Dissimilarity Index",
+      position = "bottomright"
+    )
 }
