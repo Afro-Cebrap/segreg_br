@@ -32,7 +32,7 @@ for(st in lista_estados) {
   local_expo  <- calculate_local_exposure(tracts_segreg)
   global_expo <- calculate_global_exposure(local_expo)
 
-  agregate_local_expo  <- calculate_local_exposure_agregate(tracts_segreg)
+  agregate_local_expo  <- calculate_local_exposure(tracts_segreg)
   agragate_global_expo <- calculate_global_exposure(agregate_local_expo)
   
   local_index_h  <- calculate_local_h(tracts_segreg)

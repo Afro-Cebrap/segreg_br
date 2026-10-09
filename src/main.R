@@ -1,67 +1,67 @@
-#!/usr/bin/env Rscript
-# =====================================================================
-# main.R — segreg_br pipeline orchestrator
-# ---------------------------------------------------------------------
-# Portable alternative to the `makefile` (does not require `make` to be
-# installed, which helps Windows collaborators).
-# Usage:   Rscript main.R
-#
-# Runs, in ISOLATED R sessions and in the correct order:
-#   setup -> 01_geo_br -> 02_population -> 03_mvp_segregation_indices
-#
-# Before anything else it bootstraps the reproducible environment via renv
-# it restores the library from renv.lock. If the lockfile is still
-# "decorative" (only renv/R), the `setup` step fails loudly with a clear
-# message to run renv::snapshot() — so this script doubles as the entry
-# point for reproducibility, not just execution.
-# =====================================================================
 
-# --- 0. Reproducible environment (renv) -----------------------------
-# The project .Rprofile already activates renv on session start; here we
-# just make sure the local library is in sync with renv.lock.
+# Environment Setup ---------------------------------------------------------
+
 if (!requireNamespace("renv", quietly = TRUE)) {
   stop("renv not found. Run install.packages('renv') and renv::restore().",
        call. = FALSE)
 }
-message("• renv::restore() — syncing the library with renv.lock")
-renv::restore(prompt = FALSE)
 
-# --- 1. Pipeline definition (order matters) -------------------------
-steps <- c(
-  setup      =  here::here("src", "utils", "setup.R"),# verify packages + create directories
-  geo        = here::here("src", "01_geo_br.R"),              # geobr   -> data/2_silver
-  population = here::here("src", "02_population.R"),           # censobr -> data/1_bronze
-  indices    = here::here("src", "03_mvp_segregation_indices.R")  # indices -> data/3_gold
-)
+options(scipen = 999)
 
-# --- 2. Executor: each step in a clean R session --------------------
-# Same isolation as the makefile (one session per script). Each subprocess
-# re-activates renv via .Rprofile, so it uses the same restored library.
-rscript <- file.path(R.home("bin"), "Rscript")  # cross-platform (Win: resolves Rscript.exe)
+# Package Dependencies ------------------------------------------------------
 
-run_step <- function(name, path) {
-  if (!file.exists(path)) {
-    stop(sprintf("Script not found: %s (run from the project root)", path),
-         call. = FALSE)
-  }
-  message(sprintf("\n=== [%s] %s ===", name, path))
-  t0 <- Sys.time()
-  status <- system2(rscript, args = shQuote(path))   # inherits CWD (project root)
-  dt <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
-  if (!identical(status, 0L) && !identical(status, 0)) {
-    stop(sprintf("Step '%s' FAILED (exit %s) after %.1fs. Pipeline aborted.",
-                 name, status, dt), call. = FALSE)
-  }
-  message(sprintf("✓ [%s] done in %.1fs", name, dt))
+library(here)
+library(fs) 
+library(sf)
+library(tidyverse)
+library(tidylog)
+library(geobr) 
+library(censobr)
+library(arrow) 
+library(sfarrow)
+
+# Project files and modules -----------------------------------------------
+
+source(here("src", "utils", "constants.R"))
+source(here("src", "utils", "utils_log.R"))
+source(here("src", "utils", "utils_segregation.R"))
+
+source(here("src", "01_geo_br.R"))
+source(here("src", "02_population.R"))
+source(here("src", "03_mvp_segregation_indices.R"))
+
+# 3. Pipeline Execution --------------------------------------------------------
+
+results_by_year <- list()
+
+for (year in CENSO_YEARS) {
+  
+  log_info("Starting pipeline for year: ", year)
+  
+  geo_data <- build_geo_br(year, TARGET_STATES)
+  export_geo_br(geo_data, year)
+  
+  population_data <- read_population_data(year)
+  export_population_data(population_data, year)
+  
+  # Segregation indices calculation
+  inputs <- read_segregation_inputs(year)
+  segregation_data <- build_segregation_data(year, TARGET_STATES, inputs)
+  export_segregation_data(segregation_data, year)
+  
+  results_by_year[[as.character(year)]] <- segregation_data
+  
+  log_success("Pipeline completed for year: ", year)
 }
 
-# --- 3. Run ---------------------------------------------------------
-message("▶ Starting segreg_br pipeline\n")
-t_start <- Sys.time()
+# 4. Final Dataset -------------------------------------------------
 
-for (name in names(steps)) {
-  run_step(name, steps[[name]])
-}
+# Remove not used geobr columns
+final_data <- bind_rows(results_by_year) %>%
+  select(-any_of(c("code_neighborhood", "name_neighborhood", "code_district", 
+                   "name_district", "code_subdistrict", "name_subdistrict",
+                   "zone", "code_region", "name_region")))
 
-total <- as.numeric(difftime(Sys.time(), t_start, units = "secs"))
-message(sprintf("\n✅ Pipeline complete in %.1fs", total))
+final_path <- file.path(GOLD_DIR, "sf_segregation_indices_all_years.parquet")
+st_write_parquet(final_data, final_path)
+log_success("Combined segregation data exported: ", final_path)
