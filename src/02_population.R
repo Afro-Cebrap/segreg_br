@@ -1,38 +1,41 @@
-# 0. Setup ----------------------------------------------------------------
 
-#
-options(scipen = 999) # Disable scientific notation for numbers
-
-library(here) # For file path management
-library(sf) # For spatial data manipulation
-library(censobr) # For accessing Brazilian census data
-library(tidyverse) # For data manipulation and visualization
-library(tidylog) # For logging tidyverse operations
-library(arrow) # For reading and writing data in Parquet format
-
-## Parameters
-year <- 2010
-
-
-# 1. Population data ------------------------------------------------------
-
-# Get tracts data for the specified year and dataset
-census_tracts_br <- censobr::read_tracts(year, dataset = "Pessoa", as_data_frame = TRUE, cache = TRUE)
-
-# 2. Export ---------------------------------------------------------------
-
-# census_tracts_br is an untouched read_*() pull from censobr -> BRONZE tier.
-# Create the exact target subdirectory before writing so a clean clone does not
-# fail if 01 has not run yet.
-if (!dir.exists(here("data", "1_bronze"))) {
-  dir.create(here("data", "1_bronze"), recursive = TRUE)
+# Returns the censo dataset name for the specified year
+# Parameters:
+#   year: Census year
+# Returns:
+#   Dataset name used by censobr
+get_censo_population <- function(year) {
+  dataset <- CENSO_DATASET_BY_YEAR[[as.character(year)]]
+  
+  if (is.null(dataset)) {
+    log_error(sprintf("Population dataset not configured for year: %s", year))
+  }
+  
+  dataset
 }
 
-# Export the census tracts data to a Parquet file (bronze)
-arrow::write_parquet(
-  census_tracts_br,
-  here(
-    "data", "1_bronze", "census_tracts_br.parquet")
-)
+# Reads population data by census tract for the specified year
+# Parameters:
+#   year: Census year
+# Returns:
+#   Population data by census tract
+read_population_data <- function(year) {
+  dataset <- get_censo_population(year)
+  read_tracts(year, dataset = dataset, as_data_frame = TRUE, cache = TRUE)
+}
 
-
+# Exports population data to the bronze layer
+# Parameters:
+#   data: Output from read_population_data()
+#   year: Census year used in the file name
+# Returns:
+#   Path of the exported Parquet file
+export_population_data <- function(data, year) {
+  dir_create(BRONZE_DIR)
+  path <- file.path(BRONZE_DIR, sprintf("census_tracts_br_%s.parquet", year))
+  
+  write_parquet(data, path)
+  log_success("population exported: ", path)
+  
+  invisible(path)
+}

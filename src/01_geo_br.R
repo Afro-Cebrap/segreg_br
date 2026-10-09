@@ -1,119 +1,180 @@
-# 0. Setup ----------------------------------------------------------------
 
-#
-options(scipen = 999) # Disable scientific notation for numbers
-
-library(here) # For file path management
-library(sf) # For spatial data manipulation
-library(tidyverse) # For data manipulation and visualization
-library(tidylog) # For logging tidyverse operations
-library(geobr) # For accessing Brazilian geographic data
-library(sfarrow) # For reading and writing spatial data in Parquet format
-
-## Parameters
-year <- 2010
-lista_estados <- c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", 
-                   "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", 
-                   "RR", "SC", "SP", "SE", "TO")
-
-# 1. Geospatial data ---------------------------------------------------------------
-
-# Get geo data for municipalities in metropolitan areas (geometry by municipality)
-sf_muni_metro_br <- geobr::read_metro_area(year = 2010, cache = TRUE) %>%
-  mutate(code_muni = as.character(code_muni))%>%
-  # geobr names these "Ride ..." (not "RIDE"), so a case-sensitive "RIDE"
-  # match never fires and every RIDE leaks through. RIDEs span >1 state and
-  # would be aggregated once per state -> duplicate, partial rows. Match
-  # case-insensitively on the word "ride".
-  filter(!str_detect(name_metro, regex("\\bride\\b", ignore_case = TRUE)))
-
-# Spatial key for metropolitan areas
-sf_key_metro_br <- sf_muni_metro_br %>%
-  # Make sure geometries are valid and fix any issues
-  st_make_valid() %>%
-  # Apply a small buffer to fix potential geometry issues (e.g., self-intersections)
-  st_buffer(0) %>%
-  # The geometry of metro must be estimated by the union of the geometry of the municipalities that compose it
-  # to integrate with the population data and geometry of the tracts
-  group_by(name_metro) %>%
-  summarise(
-    geometry = st_union(geometry)
-  ) %>%
-  ungroup()
-
-# read_metro_area() returns ONE ROW PER MUNICIPALITY-MEMBERSHIP and a single
-# municipality can appear in several rows (one per `legislation` act). Any join
-# that carries `legislation` (or any per-municipality column) therefore fans out
-# and duplicates rows. We collapse to the attributes that are constant per metro
-# (one row per name_metro) before joining metadata back to the unioned geometry.
-metro_meta <- sf_muni_metro_br %>%
-  st_drop_geometry() %>%
-  group_by(name_metro) %>%
-  summarise(
-    abbrev_state = paste(sort(unique(abbrev_state)), collapse = "/"),
-    .groups = "drop"
-  )
-
-# Get geo data for metropolitan areas (geometry by metropolitan area)
-sf_metro_br <- sf_key_metro_br %>%
-  left_join(metro_meta, by = "name_metro") %>%
-  mutate(
-    code_tract = "Total",
-    code_muni = "Total"
-  )
-
-# One row per municipality mapping code_muni -> name_metro. distinct() collapses
-# the multiple legislation rows that read_metro_area() returns per municipality,
-# so the join below cannot fan out.
-muni_metro_key <- sf_muni_metro_br %>%
-  st_drop_geometry() %>%
-  distinct(code_muni, name_metro)
-
-# Get geo data for municipalities (geometry by municipality)
-sf_muni_br <- geobr::read_municipality(year = 2010, cache = TRUE) %>%
-  mutate(code_muni = as.character(code_muni)) %>%
-  # integrate specific data for metropolitan areas (one row per municipality)
-  left_join(muni_metro_key, by = "code_muni") %>%
-  mutate(
-    code_tract = "Total"
-  )
-
-# Get geo data for census tracts (geometry by census tract)
-sf_tracts_br <- lista_estados %>%
-  map_df(
-    ~geobr::read_census_tract(code_tract = .x, year = 2010, cache = TRUE)
-  ) %>%
-  mutate(
-    code_muni = as.character(code_muni),
-    code_tract = as.character(code_tract)
-  ) %>%
-  # integrate specfic data for municipalities + metropolitan areas
-  left_join(
-    sf_muni_br %>% 
-      st_drop_geometry() %>%
-      select(-code_tract)
-  )
-
-# 
-sf_geo_br <- bind_rows(
-  sf_tracts_br,
-  sf_muni_br,
-  sf_metro_br
-) 
-
-# Export ------------------------------------------------------------------
-
-# geo_br is a TRANSFORMED product (union of metro geometries + joins to the
-# municipality/tract hierarchy), so by medallion semantics it belongs in the
-# SILVER tier, not bronze/raw. Create the exact target subdirectory before writing.
-if (!dir.exists(here("data", "2_silver"))) {
-  dir.create(here("data", "2_silver"), recursive = TRUE)
+# Reads and cleans metropolitan area data for the specified year
+# Parameters:
+#   year: Census year
+# Returns:
+#   Spatial data with municipalities and their metropolitan areas
+read_metro_data <- function(year) {
+  metro_data <- read_metro_area(year = year, cache = TRUE) %>%
+    mutate(code_muni = as.character(code_muni)) %>%
+    filter(!str_detect(name_metro, regex(REGEX_RIDE_NAME, ignore_case = TRUE)))
+  
+  if ("type" %in% names(metro_data)) {
+    metro_data <- metro_data %>%
+      filter(!str_detect(type, regex(REGEX_RIDE_TYPE, ignore_case = TRUE)))
+  }
+  
+  if (year == 2022) {
+    metro_data <- metro_data %>%
+      mutate(name_metro = str_replace(name_metro, REGEX_METRO_NAME_2022, "RM "))
+  }
+  
+  metro_data <- metro_data %>%
+    filter(!name_metro %in% EXCLUDED_METRO_AREAS)
+  
+  # Ensure each municipality belongs at most one metropolitan area
+  duplicates <- metro_data %>%
+    st_drop_geometry() %>%
+    distinct(code_muni, name_metro) %>%
+    count(code_muni) %>%
+    filter(n > 1)
+  
+  if (nrow(duplicates) > 0) {
+    log_error(sprintf(
+      "read_metro_data(%s): %d municipalities in multiple metro areas: %s",
+      year, nrow(duplicates), paste(duplicates$code_muni, collapse = ", ")
+    ))
+  }
+  
+  metro_data
 }
 
-# Export the combined geospatial data to a Parquet file (silver)
-sfarrow::st_write_parquet(
-  sf_geo_br,
-  here(
-    "data", "2_silver", "geo_br.parquet")
-)
+# Builds one metropolitan area geometry from municipality metro data
+# Parameters:
+#   metro_data: Output from read_metro_data()
+# Returns:
+#   Spatial data with one row per metropolitan area
+build_metro_data <- function(metro_data) {
+  key_metro <- metro_data %>%
+    st_make_valid() %>%
+    st_buffer(0) %>%
+    group_by(name_metro) %>%
+    summarise(geometry = st_union(geometry)) %>%
+    ungroup()
+  
+  # Group metadata to avoid duplicate municipality legislation records
+  metro_meta <- metro_data %>%
+    st_drop_geometry() %>%
+    group_by(name_metro) %>%
+    summarise(abbrev_state = paste(sort(unique(abbrev_state)), collapse = "/"),
+              .groups = "drop")
+  
+  key_metro %>%
+    left_join(metro_meta, by = "name_metro") %>%
+    mutate(code_tract = "Total", code_muni = "Total")
+}
 
+# Reads municipality data and links each municipality to its metropolitan area
+# Parameters:
+#   year: Census year
+#   metro_data: Output from read_metro_data()
+# Returns:
+#   Spatial data with one row per municipality and code_tract = "Total"
+build_municipality_data <- function(year, metro_data) {
+  muni_metro_key <- metro_data %>%
+    st_drop_geometry() %>%
+    distinct(code_muni, name_metro)
+  
+  read_municipality(year = year, cache = TRUE) %>%
+    mutate(code_muni = as.character(code_muni)) %>%
+    left_join(muni_metro_key, by = "code_muni") %>%
+    mutate(code_tract = "Total")
+}
+
+# Reads census tracts data and links each tract to municipality and metro data
+# Parameters:
+#   year: Census year
+#   states: State will be processed
+#   municipality_data: Municipality spatial data
+# Returns:
+#   Spatial data with one row per census tract.
+build_tract_data <- function(year, states, municipality_data) {
+  tract_data <- states %>%
+    map_dfr(~ read_census_tract(code_tract = .x, year = year, cache = TRUE)) %>%
+    mutate(code_tract = as.character(code_tract),
+           code_muni = as.character(code_muni),
+           .row_id = row_number()) %>%
+    # Drop to avoid attribute conflicts when merging multipart tracts
+    select(-any_of("code_weighting"))
+  
+  # Handle tracts represented by multiple geometry parts
+  duplicate_codes <- tract_data %>%
+    st_drop_geometry() %>%
+    count(code_tract) %>%
+    filter(n > 1) %>%
+    pull(code_tract)
+  
+  if (length(duplicate_codes) > 0) {
+    duplicated_tracts <- tract_data %>%
+      filter(code_tract %in% duplicate_codes)
+    
+    # Ensure repeated codes differ only by geometry
+    attribute_conflicts <- duplicated_tracts %>%
+      st_drop_geometry() %>%
+      select(-.row_id) %>%
+      distinct() %>%
+      count(code_tract) %>%
+      filter(n > 1)
+    
+    if (nrow(attribute_conflicts) > 0) {
+      log_error(sprintf(
+        "build_tract_data(%s): %d tract codes have conflicting attributes.",
+        year, nrow(attribute_conflicts)
+      ))
+    }
+    
+    attribute_columns <- setdiff(names(tract_data), 
+                                 c("code_tract", ".row_id", 
+                                   attr(tract_data, "sf_column")))
+    
+    # Merge geometry parts
+    duplicated_tracts <- duplicated_tracts %>%
+      group_by(code_tract) %>%
+      summarise(across(all_of(attribute_columns), first),
+                .row_id = min(.row_id), do_union = TRUE, .groups = "drop")
+    
+    tract_data <- bind_rows(
+      tract_data %>% filter(!code_tract %in% duplicate_codes),
+      duplicated_tracts
+    ) %>% arrange(.row_id)
+  }
+  
+  tract_data %>%
+    select(-.row_id) %>%
+    left_join(municipality_data %>%
+                st_drop_geometry() %>%
+                select(code_muni, name_metro),
+              by = "code_muni", relationship = "many-to-one")
+}
+
+# Builds the complete geographic dataset for the specified year.
+# Parameters:
+#   year: Census year to process.
+#   states: Vector with state abbreviations.
+# Returns:
+#   Spatial data containing census tracts, municipalities and metropolitan areas.
+build_geo_br <- function(year, states) {
+  metro_data <- read_metro_data(year)
+  metro_data_built <- build_metro_data(metro_data)
+  municipality_data <- build_municipality_data(year, metro_data)
+  tract_data <- build_tract_data(year, states, municipality_data)
+  
+  bind_rows(tract_data, municipality_data, metro_data_built) %>%
+    mutate(year = .env$year)
+}
+
+# Exports geographic data to the silver layer.
+# Parameters:
+#   data: Output from build_geo_br().
+#   year: Census year used in the file name.
+# Returns:
+#   Path of the exported Parquet file.
+export_geo_br <- function(data, year) {
+  dir_create(SILVER_DIR)
+  path <- file.path(SILVER_DIR, sprintf("geo_br_%s.parquet", year))
+  
+  st_write_parquet(data, path)
+  log_success("geo_br exported: ", path)
+  
+  invisible(path)
+}
